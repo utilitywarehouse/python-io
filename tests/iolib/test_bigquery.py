@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from iolib.bigquery import BigqueryTableManager
-from iolib import read_bigquery
+from iolib import read_bigquery, write_bigquery
 
 
 @mock.patch('iolib.bigquery.Client')
@@ -201,3 +201,10 @@ def test_read_bigquery_uses_manager(m_manager):
     actual = read_bigquery(table_id='<table_id>', query='<query>')
     m_manager.assert_called_once_with(table_id='<table_id>')
     m_manager.return_value.read.assert_called_once_with(query='<query>')
+
+
+@mock.patch('iolib.bigquery.BigqueryTableManager')
+def test_write_bigquery_uses_manager(m_manager):
+    actual = write_bigquery(table_id='<table_id>', data='<data>')
+    m_manager.assert_called_once_with(table_id='<table_id>')
+    m_manager.return_value.write.assert_called_once_with(data='<data>')
