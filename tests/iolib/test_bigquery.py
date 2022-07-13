@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from iolib.bigquery import BigqueryTableManager
+from iolib import read_bigquery
 
 
 @mock.patch('iolib.bigquery.Client')
@@ -193,3 +194,10 @@ def test_bigquery_table_manager_errors_if_insert_rows_errors_when_writing(m_clie
     with pytest.raises(Exception) as error:
         manager.write([(1,)])
     assert 'An error from Bigquery' == str(error.value)
+
+
+@mock.patch('iolib.bigquery.BigqueryTableManager')
+def test_read_bigquery_uses_manager(m_manager):
+    actual = read_bigquery(table_id='<table_id>', query='<query>')
+    m_manager.assert_called_once_with(table_id='<table_id>')
+    m_manager.return_value.read.assert_called_once_with(query='<query>')

@@ -119,3 +119,55 @@ class BigqueryTableManager:
                 errors = self.client.insert_rows(table, rows)
                 if errors:
                     raise Exception(errors)
+
+
+def read_bigquery(**kwargs):
+    """
+    Read BigQuery table as a DataFrame.
+
+    Parameters
+    ----------
+    table_id : str
+        BigQuery table id. Required if no dataset and table set.
+    project : str
+        BigQuery project. Required if table_id doesn't contain the project or
+        if the project is different than the one set in the service account.
+    dataset : str
+        BigQuery dataset. Required if table_id not set.
+    table : str
+        BigQuery table. Required if table_id not set.
+    service_account_json : str
+        Path to Google Cloud service account JSON file. Default taken from
+        environment variable GOOGLE_APPLICATION_CREDENTIALS.
+    query : str
+        BigQuery SQL query. Required if not all the rows and columns are
+        required.
+
+    Examples
+    --------
+    >>> read_bigquery(table_id='my-dataset.my-table')
+    [...]
+    >>> read_bigquery(table_id='my-project.my-dataset.my-table')
+    [...]
+    >>> read_bigquery(table_id='my-dataset.my-table',
+    ...               service_account_json='/path/to/service_account.json')
+    [...]
+    >>> read_bigquery(project='my-project',
+    ...               dataset='my-dataset',
+    ...               table=my-table',
+    ...               query='SELECT foo FROM `{table_id}` LIMIT 100')
+    [...]
+
+    See also
+    --------
+    iolib.BigqueryTableManager.read
+    """
+    init_kwarg_keys = ('table_id',
+                       'project',
+                       'dataset',
+                       'table',
+                       'service_account_json')
+    read_kwargs_keys = ('query',)
+    init_kwargs = {k: v for k, v in kwargs.items() if k in init_kwarg_keys}
+    read_kwargs = {k: v for k, v in kwargs.items() if k in read_kwargs_keys}
+    return BigqueryTableManager(**init_kwargs).read(**read_kwargs)
