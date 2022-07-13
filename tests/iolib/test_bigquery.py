@@ -1,5 +1,6 @@
 from unittest import mock
 
+from google.cloud.bigquery import Table
 import numpy as np
 import pandas as pd
 import pytest
@@ -101,3 +102,94 @@ def test_bigquery_table_manager_replaces_none_by_nan_when_reading(m_client, _):
     actual = manager.read(query='SELECT foo FROM bar')
     expected = pd.DataFrame([{'x': np.nan}])
     pd.testing.assert_frame_equal(expected, actual)
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_writes_from_list(m_client, _):
+    manager = BigqueryTableManager()
+    manager.dataset = '<dataset>'
+    manager.table = '<table>'
+    data = [(1,), (2,), (3,)]
+    m_client.insert_rows.return_value = None
+    manager.write(data)
+    # Test setup.
+    m_client.dataset.assert_called_once_with('<dataset>')
+    m_client.dataset.return_value.table.assert_called_once_with('<table>')
+    table_ref = m_client.dataset.return_value.table.return_value
+    m_client.get_table.assert_called_once_with(table_ref)
+    table = m_client.get_table.return_value
+    # Test write.
+    m_client.insert_rows.assert_called_once_with(table, data)
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_writes_from_dataframe(m_client, _):
+
+    class DummyColumn:
+
+        def __init__(self, name):
+            self.name = name
+
+    manager = BigqueryTableManager()
+    manager.dataset = '<dataset>'
+    manager.table = '<table>'
+    data = pd.DataFrame([{'a': 'x', 'b': 1}, {'a': np.nan, 'b': 2}])
+    m_client.insert_rows.return_value = None
+    table = m_client.get_table.return_value
+    table.schema = [DummyColumn('a')]
+    manager.write(data)
+    # Test write.
+    m_client.insert_rows_from_dataframe.assert_called_once()
+    args, kwargs = m_client.insert_rows_from_dataframe.call_args
+    assert table == args[0]
+    pd.testing.assert_frame_equal(pd.DataFrame([{'a': 'x'}, {'a': np.nan}]), args[1])
+    assert {'chunk_size': 1000} == kwargs
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_replaces_table_when_writing(m_client, _):
+    manager = BigqueryTableManager()
+    manager.dataset = '<dataset>'
+    manager.table = '<table>'
+    data = [(1,), (2,), (3,)]
+    m_client.insert_rows.return_value = None
+    manager.write(data, replace=True)
+    # Test setup.
+    table_ref = m_client.dataset.return_value.table.return_value
+    table = m_client.get_table.return_value
+    new_table = m_client.create_table.return_value
+    m_client.delete_table.assert_called_once_with(table_ref)
+    m_client.create_table.assert_called_once_with(Table(table_ref, schema=table.schema))
+    # Test write.
+    m_client.insert_rows.assert_called_once_with(new_table, data)
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_writes_in_batches(m_client, _):
+    manager = BigqueryTableManager()
+    manager.dataset = '<dataset>'
+    manager.table = '<table>'
+    data = [(1,), (2,), (3,), (4,), (5,)]
+    m_client.insert_rows.return_value = None
+    manager.write(data, chunk_size=3)
+    # Test write.
+    table = m_client.get_table.return_value
+    calls = [mock.call(table, [(1,), (2,), (3,)]),
+             mock.call(table, [(4,), (5,)])]
+    assert calls == m_client.insert_rows.call_args_list
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_errors_if_insert_rows_errors_when_writing(m_client, _):
+    manager = BigqueryTableManager()
+    manager.dataset = '<dataset>'
+    manager.table = '<table>'
+    m_client.insert_rows.return_value = 'An error from Bigquery'
+    with pytest.raises(Exception) as error:
+        manager.write([(1,)])
+    assert 'An error from Bigquery' == str(error.value)
