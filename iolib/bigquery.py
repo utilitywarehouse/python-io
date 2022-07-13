@@ -1,4 +1,5 @@
 from google.cloud.bigquery import Client
+import numpy as np
 
 
 class BigqueryTableManager:
@@ -39,3 +40,31 @@ class BigqueryTableManager:
         # credentials were created from).
         if project:
             self.client.project = project
+
+    def read(self, query='SELECT * FROM `{table_id}`'):
+        """
+        Read BigQuery table as a dataframe. Pass a BQ SQL query to be executed
+        or nothing to read the whole table.
+
+        Parameters
+        ----------
+        query : str
+            A BigQuery SQL query. The variable `table_id` can be used in the
+            query.
+
+        Returns
+        -------
+        pd : pandas.DataFrame
+            The resulting DataFrame from the executed query.
+
+        Examples
+        --------
+        >>> manager = BigqueryTableManager(project='p', dataset='d', table='t')
+        >>> manager.read()
+        [...]
+        >>> manager.read("SELECT foo FROM `{table_id}`")
+        [...]
+        """
+        table_id = f'{self.client.project}.{self.dataset}.{self.table}'
+        query = query.format(table_id=table_id)
+        return self.client.query(query).to_dataframe().replace({None: np.nan})

@@ -1,5 +1,7 @@
 from unittest import mock
 
+import numpy as np
+import pandas as pd
 import pytest
 
 from iolib.bigquery import BigqueryTableManager
@@ -64,3 +66,38 @@ def test_bigquery_table_manager_errors_if_no_dataset_and_table(m_client):
     with pytest.raises(AssertionError) as error:
         BigqueryTableManager()
     assert 'dataset and table are required, either passed directly or as part of table_id' == str(error.value)
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_reads_with_query(m_client, _):
+    manager = BigqueryTableManager()
+    manager.dataset = '<dataset>'
+    manager.table = '<table>'
+    manager.client.project = '<project>'
+    actual = manager.read(query='SELECT foo FROM `{table_id}`')
+    m_client.query.assert_called_once_with(
+        'SELECT foo FROM `<project>.<dataset>.<table>`')
+    assert actual == m_client.query.return_value.to_dataframe.return_value.replace.return_value
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_reads_without_query(m_client, _):
+    manager = BigqueryTableManager()
+    manager.dataset = '<dataset>'
+    manager.table = '<table>'
+    m_client.project = '<project>'
+    actual = manager.read()
+    m_client.query.assert_called_once_with('SELECT * FROM `<project>.<dataset>.<table>`')
+    assert actual == m_client.query.return_value.to_dataframe.return_value.replace.return_value
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_replaces_none_by_nan_when_reading(m_client, _):
+    manager = BigqueryTableManager()
+    m_client.query.return_value.to_dataframe.return_value = pd.DataFrame([{'x': None}])
+    actual = manager.read(query='SELECT foo FROM bar')
+    expected = pd.DataFrame([{'x': np.nan}])
+    pd.testing.assert_frame_equal(expected, actual)
