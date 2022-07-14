@@ -1,0 +1,38 @@
+name: generate documentation
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout
+      uses: actions/checkout@v3
+    - name: setup python
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.10"
+    - name: install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+    - name: generate documentation
+      run: |
+        python scripts/generate_documentation.py docs
+    - name: checkout wiki
+      uses: actions/checkout@v3
+      with:
+        repository: utilitywarehouse/python-io.wiki.git
+        path: wiki
+        ref: master
+    - name: upload documentation
+      run: |
+        rm wiki/iolib* 2> /dev/null || :
+        cp docs/* wiki/
+        cd wiki
+        git config user.name ${{ secrets.DEPLOY_GITHUB_TOKEN }}
+        git add .
+        git commit -m "update from workflow"
+        git push origin HEAD
