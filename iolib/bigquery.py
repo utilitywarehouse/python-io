@@ -130,6 +130,12 @@ class BigqueryTableManager:
                  'reason': 'notFound'}
         raise NotFound(message, errors=[error])
 
+    @property
+    def _table_id(self):
+        return '.'.join([self.client.project,
+                         self.dataset.dataset_id,
+                         self.table.table_id])
+
     def read(self, query=None):
         """
         Read BigQuery table as a dataframe. Pass a BQ SQL query to be executed
@@ -160,16 +166,58 @@ class BigqueryTableManager:
         """
         assert self.table or query,\
             'query is required when reading when no table is passed'
+
         if self.table:
             if not self.table.created:
                 self._raise_table_not_found()
-
-            table_id = '.'.join([self.client.project,
-                                 self.dataset.dataset_id,
-                                 self.table.table_id])
             query = query or 'SELECT * FROM `{table_id}`'
-            query = query.format(table_id=table_id)
+            query = query.format(table_id=self._table_id)
+
         return self.client.query(query).to_dataframe().replace({None: np.nan})
+
+    def iread(self, query='SELECT * FROM `{table_id}`', astype=None):
+        """
+        Read BigQuery table as an iterable. Pass a BQ SQL query to be executed
+        or nothing to read the whole table.
+
+        Parameters
+        ----------
+        query : str
+            A BigQuery SQL query. The variable `table_id` can be used in the
+            query.
+        astype : type, class, function
+            Iterable row type. By default is None, which yields
+            google.cloud.bigquery.table.Row. Examples: pd.Series, dict, list, a
+            custom Model...
+
+        Returns
+        -------
+        iterator : iter
+            Iterable of rows with type defined by `astype`.
+
+        Examples
+        --------
+        >>> manager = BigqueryTableManager(project='p', dataset='d', table='t')
+        >>> iterator = manager.iread()
+        >>> next(iterator)
+        Row([...])
+        >>> manager.read("SELECT foo FROM `{table_id}`")
+        >>> next(iterator)
+        {'foo': [...]}
+        """
+        query = query.format(table_id=self._table_id)
+        for row in self.client.query(query).result():
+            if astype is None:
+                yield row
+            elif astype == dict:
+                yield dict(row.items())
+            elif astype == pd.Series:
+                yield pd.Series(dict(row.items()))
+            elif hasattr(astype, '__iter__'):
+                yield astype(row.values())
+            else:
+                yield astype(row)
+
 
     def write(self, data, if_exists='fail', chunk_size=1000):
         """

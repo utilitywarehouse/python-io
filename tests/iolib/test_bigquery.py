@@ -373,6 +373,142 @@ def test_bigquery_table_manager_does_not_create_table_if_exists_is_append_when_w
 
 @mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
 @mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_ireads_with_query(m_client, _):
+    manager = BigqueryTableManager()
+    manager.dataset = mock.PropertyMock()
+    manager.dataset.dataset_id = '<dataset>'
+    manager.table = mock.PropertyMock
+    manager.table.table_id = '<table>'
+    manager.client.project = '<project>'
+    iterable = manager.iread(query='SELECT foo FROM `{table_id}`')
+    list(iterable)
+    m_client.query.assert_called_once_with(
+        'SELECT foo FROM `<project>.<dataset>.<table>`')
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_ireads_without_query(m_client, _):
+    manager = BigqueryTableManager()
+    manager.dataset = mock.PropertyMock()
+    manager.dataset.dataset_id = '<dataset>'
+    manager.table = mock.PropertyMock()
+    manager.table.table_id = '<table>'
+    m_client.project = '<project>'
+    iterable = manager.iread()
+    list(iterable)
+    m_client.query.assert_called_once_with(
+        'SELECT * FROM `<project>.<dataset>.<table>`')
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_do_not_cast_when_ireading(m_client, _):
+    manager = BigqueryTableManager()
+    manager.dataset = mock.PropertyMock()
+    manager.dataset.dataset_id = '<dataset>'
+    manager.table = mock.PropertyMock()
+    manager.table.table_id = '<table>'
+    m_client.project = '<project>'
+    row = '<row>'
+    m_client.query.return_value.result.return_value = (i for i in [row])
+    iterable = manager.iread(query='SELECT foo FROM bar')
+    assert '<row>' == next(iterable)
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_casts_to_dict_when_ireading(m_client, _):
+    manager = BigqueryTableManager()
+    manager.dataset = mock.PropertyMock()
+    manager.dataset.dataset_id = '<dataset>'
+    manager.table = mock.PropertyMock()
+    manager.table.table_id = '<table>'
+    m_client.project = '<project>'
+    row = mock.Mock()
+    row.items.return_value = [('<key>', '<value>')]
+    m_client.query.return_value.result.return_value = (i for i in [row])
+    iterable = manager.iread(query='SELECT foo FROM bar', astype=dict)
+    actual = next(iterable)
+    expected = {'<key>': '<value>'}
+    assert expected == actual
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_casts_to_series_when_ireading(m_client, _):
+    manager = BigqueryTableManager()
+    manager.dataset = mock.PropertyMock()
+    manager.dataset.dataset_id = '<dataset>'
+    manager.table = mock.PropertyMock()
+    manager.table.table_id = '<table>'
+    m_client.project = '<project>'
+    row = mock.Mock()
+    row.items.return_value = [('<key>', '<value>')]
+    m_client.query.return_value.result.return_value = (i for i in [row])
+    iterable = manager.iread(query='SELECT foo FROM bar', astype=pd.Series)
+    actual = next(iterable)
+    expected = pd.Series({'<key>': '<value>'})
+    pd.testing.assert_series_equal(expected, actual)
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_casts_to_list_when_ireading(m_client, _):
+    manager = BigqueryTableManager()
+    manager.dataset = mock.PropertyMock()
+    manager.dataset.dataset_id = '<dataset>'
+    manager.table = mock.PropertyMock()
+    manager.table.table_id = '<table>'
+    m_client.project = '<project>'
+    row = mock.Mock()
+    row.values.return_value = [1, 2, 3]
+    m_client.query.return_value.result.return_value = (i for i in [row])
+    iterable = manager.iread(query='SELECT foo FROM bar', astype=list)
+    actual = next(iterable)
+    expected = [1, 2, 3]
+    assert expected == actual
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_casts_to_tuple_when_ireading(m_client, _):
+    manager = BigqueryTableManager()
+    manager.dataset = mock.PropertyMock()
+    manager.dataset.dataset_id = '<dataset>'
+    manager.table = mock.PropertyMock()
+    manager.table.table_id = '<table>'
+    m_client.project = '<project>'
+    row = mock.Mock()
+    row.values.return_value = [1, 2, 3]
+    m_client.query.return_value.result.return_value = (i for i in [row])
+    iterable = manager.iread(query='SELECT foo FROM bar', astype=tuple)
+    actual = next(iterable)
+    expected = (1, 2, 3)
+    assert expected == actual
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_casts_to_custom_type_when_ireading(m_client, _):
+    manager = BigqueryTableManager()
+    manager.dataset = mock.PropertyMock()
+    manager.dataset.dataset_id = '<dataset>'
+    manager.table = mock.PropertyMock()
+    manager.table.table_id = '<table>'
+    m_client.project = '<project>'
+    row = [1, 2, 3]
+    custom_type = mock.Mock()
+    m_client.query.return_value.result.return_value = (i for i in [row])
+    iterable = manager.iread(query='SELECT foo FROM bar', astype=custom_type)
+    actual = next(iterable)
+    expected = custom_type.return_value
+    assert expected == actual
+    custom_type.assert_called_once_with([1, 2, 3])
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
 def test_bigquery_table_manager_writes_from_list(m_client, _):
     manager = BigqueryTableManager()
     manager.table = mock.PropertyMock()
