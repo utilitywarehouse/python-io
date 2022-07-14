@@ -13,7 +13,7 @@ import pandas as pd
 import pytest
 
 from iolib.bigquery import BigqueryTableManager, parse_schema
-from iolib import read_bigquery, write_bigquery
+from iolib import read_bigquery, iread_bigquery, write_bigquery
 
 
 def raise_not_found(*args, **kwargs):
@@ -379,6 +379,7 @@ def test_bigquery_table_manager_ireads_with_query(m_client, _):
     manager.dataset.dataset_id = '<dataset>'
     manager.table = mock.PropertyMock
     manager.table.table_id = '<table>'
+    manager.table.created = True
     manager.client.project = '<project>'
     iterable = manager.iread(query='SELECT foo FROM `{table_id}`')
     list(iterable)
@@ -508,6 +509,27 @@ def test_bigquery_table_manager_casts_to_custom_type_when_ireading(m_client, _):
 
 
 @mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+def test_bigquery_table_manager_errors_when_ireading_with_no_query_and_no_table(_):
+    manager = BigqueryTableManager()
+    iterable = manager.iread()
+    with pytest.raises(AssertionError) as error:
+        next(iterable)
+    assert 'query is required when ireading when no table is passed' == str(error.value)
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, '_raise_table_not_found', side_effect=raise_not_found)
+def test_bigquery_table_manager_errors_when_ireading_from_a_missing_table(m_raise_table_not_found, _):
+    manager = BigqueryTableManager()
+    manager.table = mock.PropertyMock()
+    manager.table.created = None
+    iterable = manager.iread(query=mock.ANY)
+    with pytest.raises(NotFound) as error:
+        next(iterable)
+    m_raise_table_not_found.assert_called_once()
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
 @mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
 def test_bigquery_table_manager_writes_from_list(m_client, _):
     manager = BigqueryTableManager()
@@ -577,6 +599,13 @@ def test_read_bigquery_uses_manager(m_manager):
     actual = read_bigquery(table='<table>', query='<query>')
     m_manager.assert_called_once_with(table='<table>')
     m_manager.return_value.read.assert_called_once_with(query='<query>')
+
+
+@mock.patch('iolib.bigquery.BigqueryTableManager')
+def test_iread_bigquery_uses_manager(m_manager):
+    actual = iread_bigquery(table_id='<table_id>', query='<query>')
+    m_manager.assert_called_once_with(table_id='<table_id>')
+    m_manager.return_value.iread.assert_called_once_with(query='<query>')
 
 
 @mock.patch('iolib.bigquery.BigqueryTableManager')

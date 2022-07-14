@@ -1,1 +1,1 @@
-from .bigquery import read_bigquery, write_bigquery
+from .bigquery import read_bigquery, iread_bigquery, write_bigquery
