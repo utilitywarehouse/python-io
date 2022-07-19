@@ -7,9 +7,10 @@ setup(
     version='0.1.0',
     packages=find_packages(include=['iolib*']),
     install_requires=[
-        'google-cloud-bigquery==2.*',
+        'google-cloud-bigquery>=2.0.0,<4.0.0',
         'pandas==1.4.*',
         'pyarrow==8.*',
+        'db-dtypes',
     ],
     extras_require={
         'dev': [
