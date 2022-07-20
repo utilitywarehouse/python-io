@@ -1,18 +1,44 @@
-from google.cloud.bigquery import Client, Table
+from google.cloud.bigquery import (
+    Client,
+    Dataset,
+    DatasetReference,
+    Table,
+    TableReference,
+)
 import numpy as np
 import pandas as pd
 
 
 class BigqueryTableManager:
+    """
+    Class to manage Bigquery table reads and writes.
+
+    Parameters
+    ----------
+    table : str or google.cloud.bigquery.Table or
+            google.cloud.bigquery.TablesetReference
+        Bigquery table. If passed as string, this can be the table id with
+        optional dataset and project (e.g. 'table', 'dataset.table',
+        'project.dataset.table').
+    dataset : str or google.cloud.bigquery.Dataset or
+              google.cloud.bigquery.DatasetReference, optional
+        Dataset containing the table. If not passed, it will be created from
+        `table`.
+    project : str, optional
+        Project id where the table is located. If not passed, it will be
+        created from `table` or Bigquery client.
+    service_account_json : str, optional
+        Path of the service account file. If not passed, it will be taken from
+        the environment (GOOGLE_APPLICATION_CREDENTIALS).
+    """
     client = None
     dataset = None
     table = None
 
     def __init__(self,
-                 table_id=None,
-                 project=None,
+                 table,
                  dataset=None,
-                 table=None,
+                 project=None,
                  service_account_json=None):
         if service_account_json:
             self.client = Client.from_service_account_json(
@@ -21,21 +47,44 @@ class BigqueryTableManager:
             self.client = Client()
 
         # Extract components from table_id.
-        if table_id:
-            splits = table_id.split('.')
+        if isinstance(table, str) and '.'  in table:
+            splits = table.split('.')
             n_splits = len(splits)
-            assert n_splits in (2, 3), f'Invalid table_id `{table_id}`'
+            assert n_splits in (2, 3), f'Invalid table_id `{table}`'
             if n_splits == 2:
                 dataset, table = splits
             else:
                 project, dataset, table = splits
 
-        assert dataset and table, \
-            'dataset and table are required, either passed directly or as '\
-            'part of table_id'
+        # Get table and dataset_id if table is a bigquery object.
+        if isinstance(table, Table):
+            self.table = table
+            dataset = self.table.dataset_id
+        elif isinstance(table, TableReference):
+            self.table = self.client.get_table(table)
+            dataset = self.table.dataset_id
 
-        self.dataset = dataset
-        self.table = table
+        # Get dataset.
+        if isinstance(dataset, Dataset):
+            self.dataset = dataset
+        elif isinstance(dataset, DatasetReference):
+            self.dataset = self.client.get_dataset(dataset)
+        elif isinstance(dataset, str):
+            dataset_ref = self.client.dataset(dataset)
+            self.dataset = self.client.get_dataset(dataset_ref)
+        elif dataset is None:
+            raise AssertionError('Missing dataset')
+        else:
+            raise AssertionError(f'Invalid dataset `{dataset}`')
+
+        # Get table if table is a string.
+        if isinstance(table, str):
+            table_ref = self.client.table(table)
+            self.table = self.client.get_table(table_ref)
+        elif table is None:
+            raise AssertionError('Missing table')
+        elif not isinstance(table, (Table, TableReference)):
+            raise AssertionError(f'Invalid table `{table}`')
 
         # Set different project than the default (the project where the
         # credentials were created from).
@@ -66,7 +115,9 @@ class BigqueryTableManager:
         >>> manager.read("SELECT foo FROM `{table_id}`")
         [...]
         """
-        table_id = f'{self.client.project}.{self.dataset}.{self.table}'
+        table_id = '.'.join([self.client.project,
+                             self.dataset.dataset_id,
+                             self.table.table_id])
         query = query.format(table_id=table_id)
         return self.client.query(query).to_dataframe().replace({None: np.nan})
 
@@ -87,21 +138,21 @@ class BigqueryTableManager:
         ------
             Exception: if an error is returned when writing rows from client.
         """
-        table_ref = self.client.dataset(self.dataset).table(self.table)
-        table = self.client.get_table(table_ref)
 
         # Get table schema, delete table and recreate it if required.
         if replace:
-            schema = table.schema
+            schema = self.table.schema
+            table_ref = self.table.reference
             self.client.delete_table(table_ref)
-            table = self.client.create_table(Table(table_ref, schema=schema))
+            table = Table(table_ref, schema=schema)
+            self.table = self.client.create_table(table)
 
         # Write dataframe.
         if isinstance(data, pd.DataFrame):
-            cols = [i.name for i in table.schema]
+            cols = [i.name for i in self.table.schema]
             data = data[cols].replace({np.nan: None})
             errors = self.client.insert_rows_from_dataframe(
-                table,
+                self.table,
                 data,
                 chunk_size=chunk_size)
 
@@ -116,7 +167,7 @@ class BigqueryTableManager:
                 if not len(rows):
                     break
 
-                errors = self.client.insert_rows(table, rows)
+                errors = self.client.insert_rows(self.table, rows)
                 if errors:
                     raise Exception(errors)
 
@@ -127,29 +178,34 @@ def read_bigquery(**kwargs):
 
     Parameters
     ----------
-    table_id : str
-        BigQuery table id. Required if no dataset and table set.
-    project : str
-        BigQuery project. Required if table_id doesn't contain the project or
-        if the project is different than the one set in the service account.
-    dataset : str
-        BigQuery dataset. Required if table_id not set.
-    table : str
-        BigQuery table. Required if table_id not set.
-    service_account_json : str
-        Path to Google Cloud service account JSON file. Default taken from
-        environment variable GOOGLE_APPLICATION_CREDENTIALS.
-    query : str
+    table : str or google.cloud.bigquery.Table or
+            google.cloud.bigquery.TablesetReference
+        Bigquery table. If passed as string, this can be the table id with
+        optional dataset and project (e.g. 'table', 'dataset.table',
+        'project.dataset.table').
+    dataset : str or google.cloud.bigquery.Dataset or
+              google.cloud.bigquery.DatasetReference, optional
+        Dataset containing the table. If not passed, it will be created from
+        `table`.
+    project : str, optional
+        Project id where the table is located. If not passed, it will be
+        created from `table` or Bigquery client.
+    service_account_json : str, optional
+        Path of the service account file. If not passed, it will be taken from
+        the environment (GOOGLE_APPLICATION_CREDENTIALS).
+    query : str, optional
         BigQuery SQL query. Required if not all the rows and columns are
         required.
 
     Examples
     --------
-    >>> read_bigquery(table_id='my-dataset.my-table')
+    >>> read_bigquery(table='my-dataset.my-table')
     [...]
-    >>> read_bigquery(table_id='my-project.my-dataset.my-table')
+    >>> read_bigquery(table='my-project.my-dataset.my-table')
     [...]
-    >>> read_bigquery(table_id='my-dataset.my-table',
+    >>> read_bigquery(table=TableReference(dataset_ref, 'my-table'))
+    [...]
+    >>> read_bigquery(table=Table(table_ref),
     ...               service_account_json='/path/to/service_account.json')
     [...]
     >>> read_bigquery(project='my-project',
@@ -162,11 +218,7 @@ def read_bigquery(**kwargs):
     --------
     iolib.BigqueryTableManager.read
     """
-    init_kwarg_keys = ('table_id',
-                       'project',
-                       'dataset',
-                       'table',
-                       'service_account_json')
+    init_kwarg_keys = ('project', 'dataset', 'table', 'service_account_json')
     read_kwargs_keys = ('query',)
     init_kwargs = {k: v for k, v in kwargs.items() if k in init_kwarg_keys}
     read_kwargs = {k: v for k, v in kwargs.items() if k in read_kwargs_keys}
@@ -179,18 +231,21 @@ def write_bigquery(**kwargs):
 
     Parameters
     ----------
-    table_id : str
-        BigQuery table id. Required if no dataset and table set.
-    project : str
-        BigQuery project. Required if table_id doesn't contain the project or
-        if the project is different than the one set in the service account.
-    dataset : str
-        BigQuery dataset. Required if table_id not set.
-    table : str
-        BigQuery table. Required if table_id not set.
-    service_account_json : str
-        Path to Google Cloud service account JSON file. Default taken from
-        environment variable GOOGLE_APPLICATION_CREDENTIALS.
+    table : str or google.cloud.bigquery.Table or
+            google.cloud.bigquery.TablesetReference
+        Bigquery table. If passed as string, this can be the table id with
+        optional dataset and project (e.g. 'table', 'dataset.table',
+        'project.dataset.table').
+    dataset : str or google.cloud.bigquery.Dataset or
+              google.cloud.bigquery.DatasetReference, optional
+        Dataset containing the table. If not passed, it will be created from
+        `table`.
+    project : str, optional
+        Project id where the table is located. If not passed, it will be
+        created from `table` or Bigquery client.
+    service_account_json : str, optional
+        Path of the service account file. If not passed, it will be taken from
+        the environment (GOOGLE_APPLICATION_CREDENTIALS).
     data : pandas.DataFrame or indexable iterable
         Data to be stored in the table.
     replace : bool
@@ -200,25 +255,24 @@ def write_bigquery(**kwargs):
 
     Examples
     --------
-    >>> write_bigquery(table_id='my-project.my-dataset.my-table', data=df)
+    >>> write_bigquery(table='my-project.my-dataset.my-table', data=df)
     [...]
-    >>> write_bigquery(table_id='my-dataset.my-table', data=rows, replace=True)
+    >>> write_bigquery(table='my-dataset.my-table', data=rows, replace=True)
     [...]
-    >>> write_bigquery(table_id='my-dataset.my-table',
-    ...                service_account_json='/path/to/service_account.json',
+    >>> write_bigquery(table=TableReference(dataset_ref, 'my-table'),
     ...                data=rows,
     ...                chunk_size=500)
+    [...]
+    >>> write_bigquery(table=Table(table_ref),
+    ...                service_account_json='/path/to/service_account.json',
+    ...                data=rows)
     [...]
 
     See also
     --------
     iolib.BigqueryTableManager.write
     """
-    init_kwarg_keys = ('table_id',
-                       'project',
-                       'dataset',
-                       'table',
-                       'service_account_json')
+    init_kwarg_keys = ('project', 'dataset', 'table', 'service_account_json')
     write_kwargs_keys = ('data', 'replace', 'chunk_size')
     init_kwargs = {k: v for k, v in kwargs.items() if k in init_kwarg_keys}
     write_kwargs = {k: v for k, v in kwargs.items() if k in write_kwargs_keys}
