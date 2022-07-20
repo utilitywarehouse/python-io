@@ -6,6 +6,7 @@ from google.cloud.bigquery import (
     TableReference,
     SchemaField,
 )
+from google.api_core.exceptions import NotFound
 import numpy as np
 import pandas as pd
 
@@ -42,6 +43,8 @@ class BigqueryTableManager:
     project : str, optional
         Project id where the table is located. If not passed, it will be
         created from `table` or Bigquery client.
+    schema : list of dicts or google.cloud.bigquery.SchemaField, optional
+        Table schema required only when creating tables.
     service_account_json : str, optional
         Path of the service account file. If not passed, it will be taken from
         the environment (GOOGLE_APPLICATION_CREDENTIALS).
@@ -54,12 +57,16 @@ class BigqueryTableManager:
                  table,
                  dataset=None,
                  project=None,
+                 schema=None,
                  service_account_json=None):
         if service_account_json:
             self.client = Client.from_service_account_json(
                 service_account_json)
         else:
             self.client = Client()
+
+        if schema:
+            schema = parse_schema(schema)
 
         # Extract components from table_id.
         if isinstance(table, str) and '.'  in table:
@@ -76,7 +83,7 @@ class BigqueryTableManager:
             self.table = table
             dataset = self.table.dataset_id
         elif isinstance(table, TableReference):
-            self.table = self.client.get_table(table)
+            self.table = self._get_or_define_table(table, schema)
             dataset = self.table.dataset_id
 
         # Get dataset.
@@ -95,7 +102,7 @@ class BigqueryTableManager:
         # Get table if table is a string.
         if isinstance(table, str):
             table_ref = self.client.table(table)
-            self.table = self.client.get_table(table_ref)
+            self.table = self._get_or_define_table(table_ref, schema)
         elif table is None:
             raise AssertionError('Missing table')
         elif not isinstance(table, (Table, TableReference)):
@@ -105,6 +112,14 @@ class BigqueryTableManager:
         # credentials were created from).
         if project:
             self.client.project = project
+
+    def _get_or_define_table(self, table_ref, schema):
+        try:
+            return self.client.get_table(table_ref)
+        except NotFound:
+            if not schema:
+                raise AssertionError('schema is required to create tables')
+            return Table(table_ref, schema=schema)
 
     def read(self, query='SELECT * FROM `{table_id}`'):
         """
@@ -133,6 +148,12 @@ class BigqueryTableManager:
         table_id = '.'.join([self.client.project,
                              self.dataset.dataset_id,
                              self.table.table_id])
+        if not self.table.created:
+            message = f'Not found: Table {table_id}'
+            error = {'message': message,
+                     'domain': 'global',
+                     'reason': 'notFound'}
+            raise NotFound(message, errors=[error])
         query = query.format(table_id=table_id)
         return self.client.query(query).to_dataframe().replace({None: np.nan})
 
@@ -155,7 +176,7 @@ class BigqueryTableManager:
         """
 
         # Get table schema, delete table and recreate it if required.
-        if replace:
+        if replace or not self.table.created:
             schema = self.table.schema
             table_ref = self.table.reference
             self.client.delete_table(table_ref)
@@ -263,6 +284,8 @@ def write_bigquery(**kwargs):
         the environment (GOOGLE_APPLICATION_CREDENTIALS).
     data : pandas.DataFrame or indexable iterable
         Data to be stored in the table.
+    schema : list of dicts or google.cloud.bigquery.SchemaField, optional
+        Table schema required only when creating tables.
     replace : bool
         Whether to replace the table or not. False, by default.
     chunk_size : int
@@ -270,7 +293,9 @@ def write_bigquery(**kwargs):
 
     Examples
     --------
-    >>> write_bigquery(table='my-project.my-dataset.my-table', data=df)
+    >>> write_bigquery(table='my-project.my-dataset.my-table',
+    ...                data=df,
+    ...                schema=schema)
     [...]
     >>> write_bigquery(table='my-dataset.my-table', data=rows, replace=True)
     [...]
@@ -287,7 +312,11 @@ def write_bigquery(**kwargs):
     --------
     iolib.BigqueryTableManager.write
     """
-    init_kwarg_keys = ('project', 'dataset', 'table', 'service_account_json')
+    init_kwarg_keys = ('project',
+                       'dataset',
+                       'table',
+                       'schema',
+                       'service_account_json')
     write_kwargs_keys = ('data', 'replace', 'chunk_size')
     init_kwargs = {k: v for k, v in kwargs.items() if k in init_kwarg_keys}
     write_kwargs = {k: v for k, v in kwargs.items() if k in write_kwargs_keys}
