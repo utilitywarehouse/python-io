@@ -5,12 +5,13 @@ from google.cloud.bigquery import (
     DatasetReference,
     Table,
     TableReference,
+    SchemaField,
 )
 import numpy as np
 import pandas as pd
 import pytest
 
-from iolib.bigquery import BigqueryTableManager
+from iolib.bigquery import BigqueryTableManager, parse_schema
 from iolib import read_bigquery, write_bigquery
 
 
@@ -283,3 +284,14 @@ def test_write_bigquery_uses_manager(m_manager):
     actual = write_bigquery(table='<table>', data='<data>')
     m_manager.assert_called_once_with(table='<table>')
     m_manager.return_value.write.assert_called_once_with(data='<data>')
+
+
+@pytest.mark.parametrize(('schema', 'expected'), (
+    ([], []),
+    ([SchemaField(name='name', description='The name', field_type='STRING', mode='NULLABLE')],
+     [SchemaField(name='name', description='The name', field_type='STRING', mode='NULLABLE')]),
+    ([{'name': 'list', 'description': 'The list', 'type': 'STRING', 'mode': 'REPEATED'}],
+     [SchemaField(name='list', description='The list', field_type='STRING', mode='REPEATED')]),
+))
+def test_parse_schema(schema, expected):
+    assert expected == parse_schema(schema)

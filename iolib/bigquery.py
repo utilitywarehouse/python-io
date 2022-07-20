@@ -4,9 +4,24 @@ from google.cloud.bigquery import (
     DatasetReference,
     Table,
     TableReference,
+    SchemaField,
 )
 import numpy as np
 import pandas as pd
+
+
+def parse_schema(schema):
+    """
+    Create a list of google.cloud.bigquery.SchemaField from a list of dicts.
+    """
+    if not schema or isinstance(schema[0], SchemaField):
+        return schema
+    key_map = {'type': 'field_type'}
+    parsed = []
+    for field in schema:
+        kwargs = {key_map.get(k, k): v for k, v in field.items()}
+        parsed.append(SchemaField(**kwargs))
+    return parsed
 
 
 class BigqueryTableManager:
