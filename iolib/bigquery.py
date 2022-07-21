@@ -4,9 +4,25 @@ from google.cloud.bigquery import (
     DatasetReference,
     Table,
     TableReference,
+    SchemaField,
 )
+from google.api_core.exceptions import NotFound
 import numpy as np
 import pandas as pd
+
+
+def parse_schema(schema):
+    """
+    Create a list of google.cloud.bigquery.SchemaField from a list of dicts.
+    """
+    if not schema or isinstance(schema[0], SchemaField):
+        return schema
+    key_map = {'type': 'field_type'}
+    parsed = []
+    for field in schema:
+        kwargs = {key_map.get(k, k): v for k, v in field.items()}
+        parsed.append(SchemaField(**kwargs))
+    return parsed
 
 
 class BigqueryTableManager:
@@ -27,6 +43,8 @@ class BigqueryTableManager:
     project : str, optional
         Project id where the table is located. If not passed, it will be
         created from `table` or Bigquery client.
+    schema : list of dicts or google.cloud.bigquery.SchemaField, optional
+        Table schema required only when creating tables.
     service_account_json : str, optional
         Path of the service account file. If not passed, it will be taken from
         the environment (GOOGLE_APPLICATION_CREDENTIALS).
@@ -39,12 +57,16 @@ class BigqueryTableManager:
                  table,
                  dataset=None,
                  project=None,
+                 schema=None,
                  service_account_json=None):
         if service_account_json:
             self.client = Client.from_service_account_json(
                 service_account_json)
         else:
             self.client = Client()
+
+        if schema:
+            schema = parse_schema(schema)
 
         # Extract components from table_id.
         if isinstance(table, str) and '.'  in table:
@@ -61,7 +83,7 @@ class BigqueryTableManager:
             self.table = table
             dataset = self.table.dataset_id
         elif isinstance(table, TableReference):
-            self.table = self.client.get_table(table)
+            self.table = self._get_or_define_table(table, schema)
             dataset = self.table.dataset_id
 
         # Get dataset.
@@ -80,7 +102,7 @@ class BigqueryTableManager:
         # Get table if table is a string.
         if isinstance(table, str):
             table_ref = self.client.table(table)
-            self.table = self.client.get_table(table_ref)
+            self.table = self._get_or_define_table(table_ref, schema)
         elif table is None:
             raise AssertionError('Missing table')
         elif not isinstance(table, (Table, TableReference)):
@@ -90,6 +112,22 @@ class BigqueryTableManager:
         # credentials were created from).
         if project:
             self.client.project = project
+
+    def _get_or_define_table(self, table_ref, schema):
+        try:
+            return self.client.get_table(table_ref)
+        except NotFound:
+            if not schema:
+                raise AssertionError('schema is required to create tables')
+            return Table(table_ref, schema=schema)
+
+    def _raise_table_not_found(self):
+        message = (f'Not found: Table {self.client.project}:'
+                   f'{self.dataset.dataset_id}.{self.table.table_id}')
+        error = {'message': message,
+                 'domain': 'global',
+                 'reason': 'notFound'}
+        raise NotFound(message, errors=[error])
 
     def read(self, query='SELECT * FROM `{table_id}`'):
         """
@@ -115,13 +153,16 @@ class BigqueryTableManager:
         >>> manager.read("SELECT foo FROM `{table_id}`")
         [...]
         """
+        if not self.table.created:
+            self._raise_table_not_found()
+
         table_id = '.'.join([self.client.project,
                              self.dataset.dataset_id,
                              self.table.table_id])
         query = query.format(table_id=table_id)
         return self.client.query(query).to_dataframe().replace({None: np.nan})
 
-    def write(self, data, replace=False, chunk_size=1000):
+    def write(self, data, if_exists='fail', chunk_size=1000):
         """
         Write data into the BigQuery table.
 
@@ -129,8 +170,14 @@ class BigqueryTableManager:
         ----------
         data : pandas.DataFrame or indexable iterable
             Data to be stored in the table.
-        replace : bool = False
-            Whether to replace the table or not.
+        if_exists : str = 'fail'
+            Behavior when the destination table exists. Value can be one of:
+            'fail'
+                If table exists, raise google.api_core.exceptions.NotFound.
+            'replace'
+                If table exists, delete it, recreate it, and insert data.
+            'append'
+                If table exists, insert data. Create if does not exist.
         chunk_size : int = 1000
             The number of rows to stream in a single chunk.
 
@@ -139,13 +186,26 @@ class BigqueryTableManager:
             Exception: if an error is returned when writing rows from client.
         """
 
-        # Get table schema, delete table and recreate it if required.
-        if replace:
-            schema = self.table.schema
-            table_ref = self.table.reference
-            self.client.delete_table(table_ref)
-            table = Table(table_ref, schema=schema)
-            self.table = self.client.create_table(table)
+        assert if_exists in ('fail', 'append', 'replace'), \
+            f'Invalid if_exists `{if_exists}`'
+
+        if if_exists == 'fail':
+            if self.table.created:
+                self._raise_table_not_found()
+            self.table = self.client.create_table(self.table)
+
+        elif if_exists == 'replace':
+            if self.table.created:
+                schema = self.table.schema
+                table_ref = self.table.reference
+                self.client.delete_table(table_ref)
+                table = Table(table_ref, schema=schema)
+                self.table = self.client.create_table(table)
+            else:
+                self.table = self.client.create_table(self.table)
+
+        elif if_exists == 'append' and not self.table.created:
+            self.table = self.client.create_table(self.table)
 
         # Write dataframe.
         if isinstance(data, pd.DataFrame):
@@ -248,16 +308,28 @@ def write_bigquery(**kwargs):
         the environment (GOOGLE_APPLICATION_CREDENTIALS).
     data : pandas.DataFrame or indexable iterable
         Data to be stored in the table.
-    replace : bool
-        Whether to replace the table or not. False, by default.
+    schema : list of dicts or google.cloud.bigquery.SchemaField, optional
+        Table schema required only when creating tables.
+    if_exists : str = 'fail'
+        Behavior when the destination table exists. Value can be one of:
+        'fail'
+            If table exists, raise google.api_core.exceptions.NotFound.
+        'replace'
+            If table exists, delete it, recreate it, and insert data.
+        'append'
+            If table exists, insert data. Create if does not exist.
     chunk_size : int
         The number of rows to stream in a single chunk. 1000, by default.
 
     Examples
     --------
-    >>> write_bigquery(table='my-project.my-dataset.my-table', data=df)
+    >>> write_bigquery(table='my-project.my-dataset.my-table',
+    ...                data=df,
+    ...                schema=schema)
     [...]
-    >>> write_bigquery(table='my-dataset.my-table', data=rows, replace=True)
+    >>> write_bigquery(table='my-dataset.my-table',
+    ...                data=rows,
+    ...                if_exists='replace')
     [...]
     >>> write_bigquery(table=TableReference(dataset_ref, 'my-table'),
     ...                data=rows,
@@ -272,8 +344,12 @@ def write_bigquery(**kwargs):
     --------
     iolib.BigqueryTableManager.write
     """
-    init_kwarg_keys = ('project', 'dataset', 'table', 'service_account_json')
-    write_kwargs_keys = ('data', 'replace', 'chunk_size')
+    init_kwarg_keys = ('project',
+                       'dataset',
+                       'table',
+                       'schema',
+                       'service_account_json')
+    write_kwargs_keys = ('data', 'if_exists', 'chunk_size')
     init_kwargs = {k: v for k, v in kwargs.items() if k in init_kwarg_keys}
     write_kwargs = {k: v for k, v in kwargs.items() if k in write_kwargs_keys}
     return BigqueryTableManager(**init_kwargs).write(**write_kwargs)

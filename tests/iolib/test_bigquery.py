@@ -5,13 +5,19 @@ from google.cloud.bigquery import (
     DatasetReference,
     Table,
     TableReference,
+    SchemaField,
 )
+from google.api_core.exceptions import NotFound
 import numpy as np
 import pandas as pd
 import pytest
 
-from iolib.bigquery import BigqueryTableManager
+from iolib.bigquery import BigqueryTableManager, parse_schema
 from iolib import read_bigquery, write_bigquery
+
+
+def raise_not_found(*args, **kwargs):
+    raise NotFound(kwargs.get('message', 'not-found'))
 
 
 @mock.patch('iolib.bigquery.Client')
@@ -27,6 +33,15 @@ def test_bigquery_table_manager_creates_client_from_service_account(m_client):
                                    service_account_json='<service_account_json>')
     m_client.from_service_account_json.assert_called_once_with('<service_account_json>')
     assert m_client.from_service_account_json.return_value == manager.client
+
+
+@mock.patch('iolib.bigquery.Client')
+@mock.patch('iolib.bigquery.parse_schema')
+def test_bigquery_table_manager_parses_schema(m_parse_schema, _):
+    manager = BigqueryTableManager(dataset='<dataset>',
+                                   table='<table>',
+                                   schema='<schema>')
+    m_parse_schema.assert_called_once_with('<schema>')
 
 
 @mock.patch('iolib.bigquery.Client')
@@ -81,30 +96,62 @@ def test_bigquery_table_manager_defines_dataset_from_dataset(m_client):
     assert dataset == manager.dataset
 
 
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_gets_table(m_client, _):
+    manager = BigqueryTableManager()
+    actual = manager._get_or_define_table('<table_ref>', None)
+    assert manager.client.get_table.return_value == actual
+    m_client.get_table.assert_called_once_with('<table_ref>')
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch('iolib.bigquery.Table')
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_defines_table(m_client, m_table, _):
+    manager = BigqueryTableManager()
+    m_client.get_table.side_effect = raise_not_found
+    actual = manager._get_or_define_table('<table_ref>', '<schema>')
+    assert m_table.return_value == actual
+    m_table.assert_called_once_with('<table_ref>', schema='<schema>')
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+def test_bigquery_table_manager_errors_if_missing_schema_when_creating_table(_):
+    manager = BigqueryTableManager()
+    manager.client = mock.PropertyMock()
+    manager.client.get_table.side_effect = raise_not_found
+    with pytest.raises(AssertionError) as error:
+        manager._get_or_define_table('<table_ref>', None)
+    assert 'schema is required to create tables' == str(error.value)
+
+
 @mock.patch('iolib.bigquery.Client')
-def test_bigquery_table_manager_defines_table_from_str(m_client):
+@mock.patch.object(BigqueryTableManager, '_get_or_define_table')
+def test_bigquery_table_manager_defines_table_from_str(m_get_or_define_table, m_client):
     manager = BigqueryTableManager(dataset='<dataset>', table='<table>')
     table_ref = m_client.return_value.table.return_value
-    table = m_client.return_value.get_table.return_value
+    table = m_get_or_define_table.return_value
     assert table == manager.table
     m_client.return_value.table.assert_called_once_with('<table>')
-    m_client.return_value.get_table.assert_called_once_with(table_ref)
+    m_get_or_define_table.assert_called_once_with(table_ref, None)
 
 
 @mock.patch('iolib.bigquery.Client')
-def test_bigquery_table_manager_defines_table_and_dataset_from_table_ref(m_client):
+@mock.patch.object(BigqueryTableManager, '_get_or_define_table')
+def test_bigquery_table_manager_defines_table_and_dataset_from_table_ref(m_get_or_define_table, m_client):
     table_ref = TableReference(DatasetReference('<project>', '<dataset>'),
                                '<table>')
-    table = m_client.return_value.get_table.return_value
+    table = m_get_or_define_table.return_value
     dataset = m_client.return_value.get_dataset.return_value
     table.dataset_id = '<dataset>'
     manager = BigqueryTableManager(table=table_ref)
     assert table == manager.table
     assert dataset == manager.dataset
-    m_client.return_value.get_table.assert_called_once_with(table_ref)
+    m_get_or_define_table.assert_called_once_with(table_ref, None)
     dataset_ref = m_client.return_value.dataset.return_value
     m_client.return_value.dataset.assert_called_once_with('<dataset>')
-    m_client.return_value.get_dataset(dataset_ref)
+    m_client.return_value.get_dataset.assert_called_once_with(dataset_ref)
 
 
 @mock.patch('iolib.bigquery.Client')
@@ -158,6 +205,22 @@ def test_bigquery_table_manager_errors_if_missing_table(m_client):
 
 @mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
 @mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_raise_table_not_found(m_client, _):
+    manager = BigqueryTableManager()
+    manager.dataset = mock.PropertyMock()
+    manager.dataset.dataset_id = '<dataset>'
+    manager.table = mock.PropertyMock()
+    manager.table.table_id = '<table>'
+    manager.client.project = '<project>'
+    with pytest.raises(NotFound) as error:
+        manager._raise_table_not_found()
+    message = 'Not found: Table <project>:<dataset>.<table>'
+    assert message == error.value.message
+    assert [{'message': message, 'domain': 'global', 'reason': 'notFound'}] == error.value.errors
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
 def test_bigquery_table_manager_reads_with_query(m_client, _):
     manager = BigqueryTableManager()
     manager.dataset = mock.PropertyMock()
@@ -201,13 +264,103 @@ def test_bigquery_table_manager_replaces_none_by_nan_when_reading(m_client, _):
 
 
 @mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, '_raise_table_not_found', side_effect=raise_not_found)
+def test_bigquery_table_manager_errors_when_reading_from_a_missing_table(m_raise_table_not_found, _):
+    manager = BigqueryTableManager()
+    manager.table = mock.PropertyMock()
+    manager.table.created = None
+    with pytest.raises(NotFound) as error:
+        manager.read(query=mock.ANY)
+    m_raise_table_not_found.assert_called_once()
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+def test_bigquery_table_manager_errors_if_invalid_if_exists_when_writing(_):
+    manager = BigqueryTableManager()
+    with pytest.raises(AssertionError) as error:
+        manager.write(mock.ANY, if_exists='other')
+    assert 'Invalid if_exists `other`' == str(error.value)
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, '_raise_table_not_found', side_effect=raise_not_found)
+def test_bigquery_table_manager_errors_if_table_exists_when_writing(m_raise_table_not_found, _):
+    manager = BigqueryTableManager()
+    manager.table = mock.PropertyMock()
+    manager.table.created = True
+    with pytest.raises(NotFound):
+        manager.write(mock.ANY, if_exists='fail')
+    m_raise_table_not_found.assert_called_once()
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_creates_table_if_exists_is_fail_when_writing(m_client, _):
+    manager = BigqueryTableManager()
+    table = mock.PropertyMock()
+    manager.table = table
+    manager.table.created = False
+    manager.write([], if_exists='fail')
+    m_client.create_table.assert_called_once_with(table)
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_replaces_table_if_exists_is_replace_when_writing(m_client, _):
+    manager = BigqueryTableManager()
+    table = mock.PropertyMock()
+    manager.table = table
+    manager.table.crated = True
+    data = [(1,), (2,), (3,)]
+    m_client.insert_rows.return_value = None
+    manager.write(data, if_exists='replace')
+    new_table = m_client.create_table.return_value
+    m_client.delete_table.assert_called_once_with(table.reference)
+    m_client.create_table.assert_called_once_with(Table(manager.table.reference, schema=manager.table.schema))
+    m_client.insert_rows.assert_called_once_with(new_table, data)
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_creates_table_if_exists_is_replace_when_writing(m_client, _):
+    manager = BigqueryTableManager()
+    table = mock.PropertyMock()
+    manager.table = table
+    manager.table.created = False
+    manager.write([], if_exists='replace')
+    m_client.create_table.assert_called_once_with(table)
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_creates_table_if_exists_is_append_when_writing(m_client, _):
+    manager = BigqueryTableManager()
+    table = mock.PropertyMock()
+    manager.table = table
+    manager.table.created = False
+    manager.write([], if_exists='append')
+    m_client.create_table.assert_called_once_with(table)
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_does_not_create_table_if_exists_is_append_when_writing(m_client, _):
+    manager = BigqueryTableManager()
+    table = mock.PropertyMock()
+    manager.table = table
+    manager.table.created = True
+    manager.write([], if_exists='append')
+    m_client.create_table.assert_not_called()
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
 @mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
 def test_bigquery_table_manager_writes_from_list(m_client, _):
     manager = BigqueryTableManager()
     manager.table = mock.PropertyMock()
     data = [(1,), (2,), (3,)]
     m_client.insert_rows.return_value = None
-    manager.write(data)
+    manager.write(data, if_exists='append')
     m_client.insert_rows.assert_called_once_with(manager.table, data)
 
 
@@ -225,7 +378,7 @@ def test_bigquery_table_manager_writes_from_dataframe(m_client, _):
     manager.table.schema = [DummyColumn('a')]
     data = pd.DataFrame([{'a': 'x', 'b': 1}, {'a': np.nan, 'b': 2}])
     m_client.insert_rows.return_value = None
-    manager.write(data)
+    manager.write(data, if_exists='append')
     m_client.insert_rows_from_dataframe.assert_called_once()
     args, kwargs = m_client.insert_rows_from_dataframe.call_args
     assert manager.table == args[0]
@@ -235,27 +388,12 @@ def test_bigquery_table_manager_writes_from_dataframe(m_client, _):
 
 @mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
 @mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
-def test_bigquery_table_manager_replaces_table_when_writing(m_client, _):
-    manager = BigqueryTableManager()
-    table = mock.PropertyMock()
-    manager.table = table
-    data = [(1,), (2,), (3,)]
-    m_client.insert_rows.return_value = None
-    manager.write(data, replace=True)
-    new_table = m_client.create_table.return_value
-    m_client.delete_table.assert_called_once_with(table.reference)
-    m_client.create_table.assert_called_once_with(Table(manager.table.reference, schema=manager.table.schema))
-    m_client.insert_rows.assert_called_once_with(new_table, data)
-
-
-@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
-@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
 def test_bigquery_table_manager_writes_in_batches(m_client, _):
     manager = BigqueryTableManager()
     manager.table = mock.PropertyMock()
     data = [(1,), (2,), (3,), (4,), (5,)]
     m_client.insert_rows.return_value = None
-    manager.write(data, chunk_size=3)
+    manager.write(data, chunk_size=3, if_exists='append')
     calls = [mock.call(manager.table, [(1,), (2,), (3,)]),
              mock.call(manager.table, [(4,), (5,)])]
     assert calls == m_client.insert_rows.call_args_list
@@ -265,9 +403,10 @@ def test_bigquery_table_manager_writes_in_batches(m_client, _):
 @mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
 def test_bigquery_table_manager_errors_if_insert_rows_errors_when_writing(m_client, _):
     manager = BigqueryTableManager()
+    manager.table = mock.PropertyMock()
     m_client.insert_rows.return_value = 'An error from Bigquery'
     with pytest.raises(Exception) as error:
-        manager.write([(1,)])
+        manager.write([(1,)], if_exists='append')
     assert 'An error from Bigquery' == str(error.value)
 
 
@@ -283,3 +422,14 @@ def test_write_bigquery_uses_manager(m_manager):
     actual = write_bigquery(table='<table>', data='<data>')
     m_manager.assert_called_once_with(table='<table>')
     m_manager.return_value.write.assert_called_once_with(data='<data>')
+
+
+@pytest.mark.parametrize(('schema', 'expected'), (
+    ([], []),
+    ([SchemaField(name='name', description='The name', field_type='STRING', mode='NULLABLE')],
+     [SchemaField(name='name', description='The name', field_type='STRING', mode='NULLABLE')]),
+    ([{'name': 'list', 'description': 'The list', 'type': 'STRING', 'mode': 'REPEATED'}],
+     [SchemaField(name='list', description='The list', field_type='STRING', mode='REPEATED')]),
+))
+def test_parse_schema(schema, expected):
+    assert expected == parse_schema(schema)
