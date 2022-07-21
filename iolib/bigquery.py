@@ -121,6 +121,14 @@ class BigqueryTableManager:
                 raise AssertionError('schema is required to create tables')
             return Table(table_ref, schema=schema)
 
+    def _raise_table_not_found(self):
+        message = (f'Not found: Table {self.client.project}:'
+                   f'{self.dataset.dataset_id}.{self.table.table_id}')
+        error = {'message': message,
+                 'domain': 'global',
+                 'reason': 'notFound'}
+        raise NotFound(message, errors=[error])
+
     def read(self, query='SELECT * FROM `{table_id}`'):
         """
         Read BigQuery table as a dataframe. Pass a BQ SQL query to be executed
@@ -145,19 +153,16 @@ class BigqueryTableManager:
         >>> manager.read("SELECT foo FROM `{table_id}`")
         [...]
         """
+        if not self.table.created:
+            self._raise_table_not_found()
+
         table_id = '.'.join([self.client.project,
                              self.dataset.dataset_id,
                              self.table.table_id])
-        if not self.table.created:
-            message = f'Not found: Table {table_id}'
-            error = {'message': message,
-                     'domain': 'global',
-                     'reason': 'notFound'}
-            raise NotFound(message, errors=[error])
         query = query.format(table_id=table_id)
         return self.client.query(query).to_dataframe().replace({None: np.nan})
 
-    def write(self, data, replace=False, chunk_size=1000):
+    def write(self, data, if_exists='fail', chunk_size=1000):
         """
         Write data into the BigQuery table.
 
@@ -165,8 +170,14 @@ class BigqueryTableManager:
         ----------
         data : pandas.DataFrame or indexable iterable
             Data to be stored in the table.
-        replace : bool = False
-            Whether to replace the table or not.
+        if_exists : str = 'fail'
+            Behavior when the destination table exists. Value can be one of:
+            'fail'
+                If table exists, raise google.api_core.exceptions.NotFound.
+            'replace'
+                If table exists, delete it, recreate it, and insert data.
+            'append'
+                If table exists, insert data. Create if does not exist.
         chunk_size : int = 1000
             The number of rows to stream in a single chunk.
 
@@ -175,13 +186,26 @@ class BigqueryTableManager:
             Exception: if an error is returned when writing rows from client.
         """
 
-        # Get table schema, delete table and recreate it if required.
-        if replace or not self.table.created:
-            schema = self.table.schema
-            table_ref = self.table.reference
-            self.client.delete_table(table_ref)
-            table = Table(table_ref, schema=schema)
-            self.table = self.client.create_table(table)
+        assert if_exists in ('fail', 'append', 'replace'), \
+            f'Invalid if_exists `{if_exists}`'
+
+        if if_exists == 'fail':
+            if self.table.created:
+                self._raise_table_not_found()
+            self.table = self.client.create_table(self.table)
+
+        elif if_exists == 'replace':
+            if self.table.created:
+                schema = self.table.schema
+                table_ref = self.table.reference
+                self.client.delete_table(table_ref)
+                table = Table(table_ref, schema=schema)
+                self.table = self.client.create_table(table)
+            else:
+                self.table = self.client.create_table(self.table)
+
+        elif if_exists == 'append' and not self.table.created:
+            self.table = self.client.create_table(self.table)
 
         # Write dataframe.
         if isinstance(data, pd.DataFrame):
@@ -286,8 +310,14 @@ def write_bigquery(**kwargs):
         Data to be stored in the table.
     schema : list of dicts or google.cloud.bigquery.SchemaField, optional
         Table schema required only when creating tables.
-    replace : bool
-        Whether to replace the table or not. False, by default.
+    if_exists : str = 'fail'
+        Behavior when the destination table exists. Value can be one of:
+        'fail'
+            If table exists, raise google.api_core.exceptions.NotFound.
+        'replace'
+            If table exists, delete it, recreate it, and insert data.
+        'append'
+            If table exists, insert data. Create if does not exist.
     chunk_size : int
         The number of rows to stream in a single chunk. 1000, by default.
 
@@ -297,7 +327,9 @@ def write_bigquery(**kwargs):
     ...                data=df,
     ...                schema=schema)
     [...]
-    >>> write_bigquery(table='my-dataset.my-table', data=rows, replace=True)
+    >>> write_bigquery(table='my-dataset.my-table',
+    ...                data=rows,
+    ...                if_exists='replace')
     [...]
     >>> write_bigquery(table=TableReference(dataset_ref, 'my-table'),
     ...                data=rows,
@@ -317,7 +349,7 @@ def write_bigquery(**kwargs):
                        'table',
                        'schema',
                        'service_account_json')
-    write_kwargs_keys = ('data', 'replace', 'chunk_size')
+    write_kwargs_keys = ('data', 'if_exists', 'chunk_size')
     init_kwargs = {k: v for k, v in kwargs.items() if k in init_kwarg_keys}
     write_kwargs = {k: v for k, v in kwargs.items() if k in write_kwargs_keys}
     return BigqueryTableManager(**init_kwargs).write(**write_kwargs)
