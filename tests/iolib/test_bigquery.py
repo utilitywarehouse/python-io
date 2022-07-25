@@ -130,10 +130,11 @@ def test_bigquery_table_manager_errors_if_missing_schema_when_creating_table(_):
 @mock.patch.object(BigqueryTableManager, '_get_or_define_table')
 def test_bigquery_table_manager_defines_table_from_str(m_get_or_define_table, m_client):
     manager = BigqueryTableManager(dataset='<dataset>', table='<table>')
-    table_ref = m_client.return_value.table.return_value
+    dataset = m_client.return_value.get_dataset.return_value
+    table_ref = dataset.table.return_value
     table = m_get_or_define_table.return_value
     assert table == manager.table
-    m_client.return_value.table.assert_called_once_with('<table>')
+    dataset.table.assert_called_once_with('<table>')
     m_get_or_define_table.assert_called_once_with(table_ref, None)
 
 

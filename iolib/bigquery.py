@@ -101,7 +101,7 @@ class BigqueryTableManager:
 
         # Get table if table is a string.
         if isinstance(table, str):
-            table_ref = self.client.table(table)
+            table_ref = self.dataset.table(table)
             self.table = self._get_or_define_table(table_ref, schema)
         elif table is None:
             raise AssertionError('Missing table')
