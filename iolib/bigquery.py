@@ -173,7 +173,7 @@ class BigqueryTableManager:
         if_exists : str = 'fail'
             Behavior when the destination table exists. Value can be one of:
             'fail'
-                If table exists, raise google.api_core.exceptions.NotFound.
+                If table exists, raise ValueError.
             'replace'
                 If table exists, delete it, recreate it, and insert data.
             'append'
@@ -191,7 +191,10 @@ class BigqueryTableManager:
 
         if if_exists == 'fail':
             if self.table.created:
-                self._raise_table_not_found()
+                raise ValueError(
+                    'Table already exists. Use `if_exists="replace"` or '
+                    '`if_exists="append"` if you want to modify the table.`'
+                )
             self.table = self.client.create_table(self.table)
 
         elif if_exists == 'replace':
