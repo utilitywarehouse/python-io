@@ -284,14 +284,15 @@ def test_bigquery_table_manager_errors_if_invalid_if_exists_when_writing(_):
 
 
 @mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
-@mock.patch.object(BigqueryTableManager, '_raise_table_not_found', side_effect=raise_not_found)
-def test_bigquery_table_manager_errors_if_table_exists_when_writing(m_raise_table_not_found, _):
+def test_bigquery_table_manager_errors_if_table_exists_when_writing(_):
     manager = BigqueryTableManager()
     manager.table = mock.PropertyMock()
     manager.table.created = True
-    with pytest.raises(NotFound):
+    with pytest.raises(ValueError) as error:
         manager.write(mock.ANY, if_exists='fail')
-    m_raise_table_not_found.assert_called_once()
+    message = 'Table already exists. Use `if_exists="replace"` or '\
+              '`if_exists="append"` if you want to modify the table.`'
+    assert message == str(error.value)
 
 
 @mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
