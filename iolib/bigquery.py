@@ -78,6 +78,11 @@ class BigqueryTableManager:
             else:
                 project, dataset, table = splits
 
+        # Set different project than the default (the project where the
+        # credentials were created from).
+        if project:
+            self.client.project = project
+
         # Get table and dataset_id if table is a bigquery object.
         if isinstance(table, Table):
             self.table = table
@@ -107,11 +112,6 @@ class BigqueryTableManager:
             raise AssertionError('Missing table')
         elif not isinstance(table, (Table, TableReference)):
             raise AssertionError(f'Invalid table `{table}`')
-
-        # Set different project than the default (the project where the
-        # credentials were created from).
-        if project:
-            self.client.project = project
 
     def _get_or_define_table(self, table_ref, schema):
         try:
