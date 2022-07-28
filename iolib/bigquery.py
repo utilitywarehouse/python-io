@@ -32,7 +32,7 @@ class BigqueryTableManager:
     Parameters
     ----------
     table : str or google.cloud.bigquery.Table or
-            google.cloud.bigquery.TablesetReference
+            google.cloud.bigquery.TablesetReference, optional
         Bigquery table. If passed as string, this can be the table id with
         optional dataset and project (e.g. 'table', 'dataset.table',
         'project.dataset.table').
@@ -54,7 +54,7 @@ class BigqueryTableManager:
     table = None
 
     def __init__(self,
-                 table,
+                 table=None,
                  dataset=None,
                  project=None,
                  schema=None,
@@ -100,7 +100,8 @@ class BigqueryTableManager:
             dataset_ref = self.client.dataset(dataset)
             self.dataset = self.client.get_dataset(dataset_ref)
         elif dataset is None:
-            raise AssertionError('Missing dataset')
+            if table is not None:
+                raise AssertionError('Dataset required if table provided')
         else:
             raise AssertionError(f'Invalid dataset `{dataset}`')
 
@@ -108,10 +109,10 @@ class BigqueryTableManager:
         if isinstance(table, str):
             table_ref = self.dataset.table(table)
             self.table = self._get_or_define_table(table_ref, schema)
-        elif table is None:
-            raise AssertionError('Missing table')
-        elif not isinstance(table, (Table, TableReference)):
+        elif table and not isinstance(table, (Table, TableReference)):
             raise AssertionError(f'Invalid table `{table}`')
+
+        # Table can be None but only read will be permitted in that case.
 
     def _get_or_define_table(self, table_ref, schema):
         try:
@@ -129,16 +130,17 @@ class BigqueryTableManager:
                  'reason': 'notFound'}
         raise NotFound(message, errors=[error])
 
-    def read(self, query='SELECT * FROM `{table_id}`'):
+    def read(self, query=None):
         """
         Read BigQuery table as a dataframe. Pass a BQ SQL query to be executed
         or nothing to read the whole table.
 
         Parameters
         ----------
-        query : str
-            A BigQuery SQL query. The variable `table_id` can be used in the
-            query.
+        query : str, optional
+            BigQuery SQL query. Required if table is None or if not all the
+            rows and columns are required. The variable `table_id` can be used in
+            the query.
 
         Returns
         -------
@@ -152,14 +154,21 @@ class BigqueryTableManager:
         [...]
         >>> manager.read("SELECT foo FROM `{table_id}`")
         [...]
+        >>> manager = BigqueryTableManager()
+        >>> manager.read("SELECT foo FROM `project.dataset.table`")
+        [...]
         """
-        if not self.table.created:
-            self._raise_table_not_found()
+        assert self.table or query,\
+            'query is required when reading when no table is passed'
+        if self.table:
+            if not self.table.created:
+                self._raise_table_not_found()
 
-        table_id = '.'.join([self.client.project,
-                             self.dataset.dataset_id,
-                             self.table.table_id])
-        query = query.format(table_id=table_id)
+            table_id = '.'.join([self.client.project,
+                                 self.dataset.dataset_id,
+                                 self.table.table_id])
+            query = query or 'SELECT * FROM `{table_id}`'
+            query = query.format(table_id=table_id)
         return self.client.query(query).to_dataframe().replace({None: np.nan})
 
     def write(self, data, if_exists='fail', chunk_size=1000):
@@ -188,6 +197,8 @@ class BigqueryTableManager:
 
         assert if_exists in ('fail', 'append', 'replace'), \
             f'Invalid if_exists `{if_exists}`'
+
+        assert self.table, 'table is required to write'
 
         if if_exists == 'fail':
             if self.table.created:
@@ -242,7 +253,7 @@ def read_bigquery(**kwargs):
     Parameters
     ----------
     table : str or google.cloud.bigquery.Table or
-            google.cloud.bigquery.TablesetReference
+            google.cloud.bigquery.TablesetReference, option
         Bigquery table. If passed as string, this can be the table id with
         optional dataset and project (e.g. 'table', 'dataset.table',
         'project.dataset.table').
@@ -257,14 +268,17 @@ def read_bigquery(**kwargs):
         Path of the service account file. If not passed, it will be taken from
         the environment (GOOGLE_APPLICATION_CREDENTIALS).
     query : str, optional
-        BigQuery SQL query. Required if not all the rows and columns are
-        required.
+        BigQuery SQL query. Required if table is not passed or if not all the
+        rows and columns are required. The variable `table_id` can be used in
+        the query.
 
     Examples
     --------
     >>> read_bigquery(table='my-dataset.my-table')
     [...]
     >>> read_bigquery(table='my-project.my-dataset.my-table')
+    [...]
+    >>> read_bigquery(query='SELECT foo FROM `my-project.my-dataset.my-table`')
     [...]
     >>> read_bigquery(table=TableReference(dataset_ref, 'my-table'))
     [...]
@@ -295,7 +309,7 @@ def write_bigquery(**kwargs):
     Parameters
     ----------
     table : str or google.cloud.bigquery.Table or
-            google.cloud.bigquery.TablesetReference
+            google.cloud.bigquery.TablesetReference, option
         Bigquery table. If passed as string, this can be the table id with
         optional dataset and project (e.g. 'table', 'dataset.table',
         'project.dataset.table').
