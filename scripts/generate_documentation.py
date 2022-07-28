@@ -75,7 +75,7 @@ for dirpath, _, filenames in os.walk(iolib_root):
             content = ''
             content += f'## {class_name}\n\n'
             if (docstring := inspect.getdoc(cls)):
-                content += f'```{docstring}\n```\n\n'
+                content += f'```\n{docstring}\n```\n\n'
             for obj_name, obj in inspect.getmembers(cls):
                 if obj_name.startswith('_') or \
                         not (inspect.ismethod(obj) or inspect.isfunction(obj)):
