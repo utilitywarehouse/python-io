@@ -33,7 +33,7 @@ poetry add git+ssh://git@github.com/utilitywarehouse/python-io.git
 To exclude dev packages:
 
 ```
-poetry install --no-dev
+poetry install --only main
 ```
 
 ## Documentation
