@@ -130,6 +130,12 @@ class BigqueryTableManager:
                  'reason': 'notFound'}
         raise NotFound(message, errors=[error])
 
+    @property
+    def _table_id(self):
+        return '.'.join([self.client.project,
+                         self.dataset.dataset_id,
+                         self.table.table_id])
+
     def read(self, query=None):
         """
         Read BigQuery table as a dataframe. Pass a BQ SQL query to be executed
@@ -139,8 +145,8 @@ class BigqueryTableManager:
         ----------
         query : str, optional
             BigQuery SQL query. Required if table is None or if not all the
-            rows and columns are required. The variable `table_id` can be used in
-            the query.
+            rows and columns are required. The variable `table_id` can be used
+            in the query.
 
         Returns
         -------
@@ -160,16 +166,67 @@ class BigqueryTableManager:
         """
         assert self.table or query,\
             'query is required when reading when no table is passed'
+
         if self.table:
             if not self.table.created:
                 self._raise_table_not_found()
-
-            table_id = '.'.join([self.client.project,
-                                 self.dataset.dataset_id,
-                                 self.table.table_id])
             query = query or 'SELECT * FROM `{table_id}`'
-            query = query.format(table_id=table_id)
+            query = query.format(table_id=self._table_id)
+
         return self.client.query(query).to_dataframe().replace({None: np.nan})
+
+    def iread(self, query=None, astype=None):
+        """
+        Read BigQuery table as an iterable. Pass a BQ SQL query to be executed
+        or nothing to read the whole table.
+
+        Parameters
+        ----------
+        query : str, optional
+            BigQuery SQL query. Required if table is None or if not all the
+            rows and columns are required. The variable `table_id` can be used
+            in the query.
+        astype : type, class, function
+            Iterable row type. By default is None, which yields
+            google.cloud.bigquery.table.Row. Examples: pd.Series, dict, list, a
+            custom Model...
+
+        Returns
+        -------
+        iterator : iter
+            Iterable of rows with type defined by `astype`.
+
+        Examples
+        --------
+        >>> manager = BigqueryTableManager(project='p', dataset='d', table='t')
+        >>> iterator = manager.iread()
+        >>> next(iterator)
+        Row([...])
+        >>> manager.read("SELECT foo FROM `{table_id}`")
+        >>> next(iterator)
+        {'foo': [...]}
+        """
+        assert self.table or query,\
+            'query is required when ireading when no table is passed'
+
+        if self.table:
+            if not self.table.created:
+                self._raise_table_not_found()
+            query = query or 'SELECT * FROM `{table_id}`'
+            query = query.format(table_id=self._table_id)
+
+        for row in self.client.query(query).result():
+            if astype is None:
+                yield row
+            elif astype == dict:
+                yield dict(row.items())
+            elif astype == pd.Series:
+                yield pd.Series(dict(row.items()))
+            elif hasattr(astype, '__iter__'):
+                yield astype(row.values())
+            else:
+                yield astype(row)
+
 
     def write(self, data, if_exists='fail', chunk_size=1000):
         """
@@ -300,6 +357,63 @@ def read_bigquery(**kwargs):
     init_kwargs = {k: v for k, v in kwargs.items() if k in init_kwarg_keys}
     read_kwargs = {k: v for k, v in kwargs.items() if k in read_kwargs_keys}
     return BigqueryTableManager(**init_kwargs).read(**read_kwargs)
+
+
+def iread_bigquery(**kwargs):
+    """
+    Read BigQuery table as an iterable.
+
+    Parameters
+    ----------
+    table : str or google.cloud.bigquery.Table or
+            google.cloud.bigquery.TablesetReference, option
+        Bigquery table. If passed as string, this can be the table id with
+        optional dataset and project (e.g. 'table', 'dataset.table',
+        'project.dataset.table').
+    dataset : str or google.cloud.bigquery.Dataset or
+              google.cloud.bigquery.DatasetReference, optional
+        Dataset containing the table. If not passed, it will be created from
+        `table`.
+    project : str, optional
+        Project id where the table is located. If not passed, it will be
+        created from `table` or Bigquery client.
+    service_account_json : str, optional
+        Path of the service account file. If not passed, it will be taken from
+        the environment (GOOGLE_APPLICATION_CREDENTIALS).
+    query : str, optional
+        BigQuery SQL query. Required if table is not passed or if not all the
+        rows and columns are required. The variable `table_id` can be used in
+        the query.
+    astype : type, class, function
+        Iterable row type. By default, it yields
+        google.cloud.bigquery.table.Row. Examples: pd.Series, dict, list, a
+        custom Model...
+
+    Examples
+    --------
+    >>> iterator = iread_bigquery(table_id='my-dataset.my-table')
+    >>> next(iterator)
+    Row([...])
+    >>> iterator = iread_bigquery(table_id='my-project.my-dataset.my-table',
+    ...                           query='SELECT foo FROM `{table_id}`',
+    ...                           astype=dict)
+    {'foo': [...]}
+    >>> iterator = iread_bigquery(query='SELECT foo FROM `dataset.table`')
+    [[...]]
+
+    See also
+    --------
+    iolib.BigqueryTableManager.iread
+    """
+    init_kwarg_keys = ('table_id',
+                       'project',
+                       'dataset',
+                       'table',
+                       'service_account_json')
+    iread_kwargs_keys = ('query', 'astype')
+    init_kwargs = {k: v for k, v in kwargs.items() if k in init_kwarg_keys}
+    iread_kwargs = {k: v for k, v in kwargs.items() if k in iread_kwargs_keys}
+    return BigqueryTableManager(**init_kwargs).iread(**iread_kwargs)
 
 
 def write_bigquery(**kwargs):
