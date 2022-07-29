@@ -187,7 +187,7 @@ def test_bigquery_table_manager_errors_if_invalid_dataset(m_client):
 def test_bigquery_table_manager_errors_if_missing_dataset(m_client):
     with pytest.raises(AssertionError) as error:
         BigqueryTableManager(table='<table>')
-    assert 'Missing dataset' == str(error.value)
+    assert 'Dataset required if table provided' == str(error.value)
 
 
 @mock.patch('iolib.bigquery.Client')
@@ -198,10 +198,9 @@ def test_bigquery_table_manager_errors_if_invalid_table(m_client):
 
 
 @mock.patch('iolib.bigquery.Client')
-def test_bigquery_table_manager_errors_if_missing_table(m_client):
-    with pytest.raises(AssertionError) as error:
-        BigqueryTableManager(table=None, dataset='<dataset>')
-    assert 'Missing table' == str(error.value)
+def test_bigquery_table_manager_is_created_with_no_table(m_client):
+    manager = BigqueryTableManager()
+    assert manager.table is None
 
 
 @mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
@@ -273,6 +272,23 @@ def test_bigquery_table_manager_errors_when_reading_from_a_missing_table(m_raise
     with pytest.raises(NotFound) as error:
         manager.read(query=mock.ANY)
     m_raise_table_not_found.assert_called_once()
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+@mock.patch.object(BigqueryTableManager, 'client', new_callable=mock.PropertyMock())
+def test_bigquery_table_manager_read_from_query(m_client, _):
+    manager = BigqueryTableManager()
+    actual = manager.read(query='SELECT foo FROM `table`')
+    m_client.query.assert_called_once_with('SELECT foo FROM `table`')
+    assert actual == m_client.query.return_value.to_dataframe.return_value.replace.return_value
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+def test_bigquery_table_manager_errors_when_reading_with_no_query_and_no_table(_):
+    manager = BigqueryTableManager()
+    with pytest.raises(AssertionError) as error:
+        manager.read()
+    assert 'query is required when reading when no table is passed' == str(error.value)
 
 
 @mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
@@ -410,6 +426,14 @@ def test_bigquery_table_manager_errors_if_insert_rows_errors_when_writing(m_clie
     with pytest.raises(Exception) as error:
         manager.write([(1,)], if_exists='append')
     assert 'An error from Bigquery' == str(error.value)
+
+
+@mock.patch.object(BigqueryTableManager, '__init__', return_value=None)
+def test_bigquery_table_manager_errors_when_writing_with_no_table(_):
+    manager = BigqueryTableManager()
+    with pytest.raises(AssertionError) as error:
+        manager.write(mock.ANY)
+    assert 'table is required to write' == str(error.value)
 
 
 @mock.patch('iolib.bigquery.BigqueryTableManager')
