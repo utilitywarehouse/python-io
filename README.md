@@ -7,7 +7,7 @@ Python tools to read/write from/to external services
 ### pip
 
 ```
-pip install git+ssh://git@github.com/utilitywarehouse/python-io.git
+pip install git+https://git@github.com/utilitywarehouse/python-io.git
 ```
 
 For development install the required packages as
@@ -27,7 +27,7 @@ pip install -e .[dev]
 If using poetry, you'll need version 1.2+.
 
 ```
-poetry add git+ssh://git@github.com/utilitywarehouse/python-io.git
+poetry add git+https://git@github.com/utilitywarehouse/python-io.git
 ```
 
 To exclude dev packages:
