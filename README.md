@@ -22,6 +22,12 @@ or use `[dev]` to install the extra packages
 pip install -e .[dev]
 ```
 
+You can also, install the Jupyter kernel if needed with
+
+```
+scripts/create_jupyter_kernel.sh
+```
+
 ### poetry
 
 If using poetry, you'll need version 1.2+.
