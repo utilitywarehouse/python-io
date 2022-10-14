@@ -32,7 +32,7 @@ jobs:
         rm wiki/iolib* 2> /dev/null || :
         cp docs/* wiki/
         cd wiki
-        git config user.name ${{ secrets.DEPLOY_GITHUB_TOKEN }}
+        git config user.name ${{ secrets.GITHUB_TOKEN }}
         git add .
         git commit -m "update from workflow"
         git push origin HEAD
