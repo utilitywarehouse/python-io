@@ -25,7 +25,7 @@ def list_drive(name=None,
                drive_id=None,
                service_account_json=None):
     """
-    List files fro Google Drive.
+    List files from Google Drive.
 
     Parameters
     ----------
