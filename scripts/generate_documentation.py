@@ -34,7 +34,7 @@ def generate_item_doc(executable, class_name=None):
     content += '\n```\n'
     if (docstring := inspect.getdoc(executable)):
         content += '\n```\n'
-        content += inspect.getdoc(docstring)
+        content += docstring
         content += '\n```\n\n'
     return content
 
