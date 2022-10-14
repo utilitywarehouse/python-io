@@ -32,9 +32,10 @@ def generate_item_doc(executable, class_name=None):
     content += f'# {path}\n'
     content += f'{executable.__name__}({arg_str})'
     content += '\n```\n'
-    content += '\n```\n'
-    content += inspect.getdoc(executable)
-    content += '\n```\n\n'
+    if (docstring := inspect.getdoc(executable)):
+        content += '\n```\n'
+        content += inspect.getdoc(docstring)
+        content += '\n```\n\n'
     return content
 
 
