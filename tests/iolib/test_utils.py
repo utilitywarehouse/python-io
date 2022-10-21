@@ -1,6 +1,8 @@
 from unittest import mock
 
-from iolib.utils import build_google_api
+import pytest
+
+from iolib.utils import build_google_api, to_snakecase
 
 
 @mock.patch('iolib.utils.Credentials')
@@ -37,3 +39,15 @@ def test_build_google_api_with_credentials_from_env(m_os, m_build, m_credentials
         service_account_json,
         scopes=scopes)
     m_build.assert_called_once_with(name, version, credentials=credentials)
+
+
+@pytest.mark.parametrize(('value', 'expected'), (
+    ('to_csv', 'to_csv'),
+    ('user name', 'user_name'),
+    ('Email Address', 'email_address'),
+    ('phoneNumber', 'phone_number'),
+    ('toHTML', 'to_html'),
+))
+def test_to_snakecase(value, expected):
+    actual = to_snakecase(value)
+    assert expected == actual
