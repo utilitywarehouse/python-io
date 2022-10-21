@@ -1,6 +1,6 @@
 import pandas as pd
 
-from .utils import build_google_api, to_snakecase
+from .utils import build_google_api, normalize_key
 
 
 API_NAME = 'drive'
@@ -55,7 +55,7 @@ def list_drive(name=None,
                       includeItemsFromAllDrives=True,
                       supportsAllDrives=True)
     result = api.files().list(**kwargs).execute()['files']
-    return pd.DataFrame(result).rename(columns=to_snakecase)
+    return pd.DataFrame(result).rename(columns=normalize_key)
 
 
 def format_search_query(name=None, folder_id=None, mime_type=None):
