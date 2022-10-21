@@ -2,7 +2,7 @@ from unittest import mock
 
 import pytest
 
-from iolib.utils import build_google_api, to_snakecase
+from iolib.utils import build_google_api, to_snakecase, normalize_key
 
 
 @mock.patch('iolib.utils.Credentials')
@@ -51,3 +51,14 @@ def test_build_google_api_with_credentials_from_env(m_os, m_build, m_credentials
 def test_to_snakecase(value, expected):
     actual = to_snakecase(value)
     assert expected == actual
+
+
+@pytest.mark.parametrize(('value', 'expected'), (
+    ('name', 'name'),
+    ('user_name', 'user'),
+))
+def test_normalize_key(value, expected):
+    with mock.patch('iolib.utils.to_snakecase', side_effect=lambda x: x) as m_to_snakecase:
+        actual = normalize_key(value)
+    assert expected == actual
+    m_to_snakecase.assert_called_once_with(value)
