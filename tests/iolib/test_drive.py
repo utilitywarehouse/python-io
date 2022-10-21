@@ -3,7 +3,7 @@ from unittest import mock
 import pandas as pd
 import pytest
 
-from iolib import list_drive
+from iolib import list_drive, list_drive_permissions
 from iolib.drive import API_NAME, API_VERSION, build, format_search_query
 
 
@@ -111,3 +111,26 @@ def test_list_drive_with_service_account_json(m_build, m_format_search_query):
     list_drive(service_account_json=service_account_json)
     m_build.assert_called_once_with(readonly=True,
                                     service_account_json=service_account_json)
+
+
+@mock.patch('iolib.drive.build')
+def test_list_drive_permissions(m_build):
+    m_list = m_build.return_value.permissions.return_value.list
+    m_list.return_value.execute.return_value = {
+        'permissions': [
+            {'id': '1', 'type': 'user', 'emailAddress': 'bob@mail.com', 'role': 'writer'},
+            {'id': '2', 'type': 'user', 'emailAddress': 'alice@mail.com', 'role': 'owner'},
+        ]
+    }
+    actual = list_drive_permissions('<item_id>')
+    expected = pd.DataFrame([
+        {'id': '1', 'type': 'user', 'email_address': 'bob@mail.com', 'role': 'writer'},
+        {'id': '2', 'type': 'user', 'email_address': 'alice@mail.com', 'role': 'owner'},
+    ])
+
+    pd.testing.assert_frame_equal(expected, actual)
+    m_build.assert_called_once_with(readonly=True, service_account_json=None)
+    m_build.return_value.permissions.assert_called_once_with()
+    m_list.assert_called_once_with(
+        fileId='<item_id>',
+        fields='permissions/id,permissions/type,permissions/role,permissions/emailAddress')

@@ -81,3 +81,17 @@ def format_search_query(name=None, folder_id=None, mime_type=None):
     if mime_type:
         queries.append(f'mimeType = "{mime_type}"')
     return ' and '.join(queries) or None
+
+
+def list_drive_permissions(item_id, service_account_json=None, api=None):
+    if api is None:
+        api = (
+            build(readonly=True, service_account_json=service_account_json)
+            .permissions()
+        )
+    fields = ['permissions/id',
+              'permissions/type',
+              'permissions/role',
+              'permissions/emailAddress']
+    response = api.list(fileId=item_id, fields=','.join(fields)).execute()
+    return pd.DataFrame(response['permissions']).rename(columns=to_snakecase)
