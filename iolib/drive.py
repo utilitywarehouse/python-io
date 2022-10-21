@@ -81,3 +81,127 @@ def format_search_query(name=None, folder_id=None, mime_type=None):
     if mime_type:
         queries.append(f'mimeType = "{mime_type}"')
     return ' and '.join(queries) or None
+
+
+class DrivePermissions:
+    api = None
+
+    def __init__(self, service_account_json=None):
+        self.api = (
+            build(service_account_json=service_account_json)
+            .permissions()
+        )
+
+    def list(self, item_id):
+        """
+        List permissions for a given Google Drive item (file, folder or drive).
+
+        Parameters
+        ----------
+        item_id : str
+            Google Drive item id.
+
+        Returns
+        -------
+        df : pandas.DataFrame(id, type, email, role)
+        """
+        fields = ['permissions/id',
+                  'permissions/type',
+                  'permissions/role',
+                  'permissions/emailAddress']
+        response = (
+            self.api
+            .list(fileId=item_id, fields=','.join(fields))
+            .execute()
+        )
+        return (
+            pd.DataFrame(response['permissions'])
+            .rename(columns=normalize_key)
+        )
+
+    def create(self, item_id, email, role, type='user'):
+        """
+        Create a permission for a Google Drive item (file, folder or drive).
+
+        Parameters
+        ----------
+        item_id : str
+            Google Drive item id.
+        email : str
+            Email for permission (user email, group email...).
+        role : str
+            Permission role. This must be in (writer, commenter, reader).
+        type : str, default='user'
+            Permission type. This must be in (user, group, domain, anyone)
+
+        Returns
+        -------
+        result : dict(id)
+            Dictionary with permission id.
+        """
+        self._validate_type(type)
+        self._validate_role(role)
+        kwargs = {
+            'fileId': item_id,
+            'body': {'emailAddress': email, 'type': type, 'role': role}
+        }
+        if type in ('user', 'group'):
+            kwargs['sendNotificationEmail'] = False
+        result = self.api.create(**kwargs).execute()
+        return {'id': result['id']}
+
+    def update(self, item_id, permission_id, role):
+        """
+        Update a permission for a Google Drive item (file, folder or drive).
+
+        Parameters
+        ----------
+        item_id : str
+            Google Drive item id.
+        permission_id : str
+            Permission id.
+        role : str
+            Permission role. This must be in (writer, commenter, reader).
+
+        Returns
+        -------
+        result : dict(id)
+            Dictionary with permission id.
+        """
+        self._validate_role(role)
+        kwargs = {
+            'fileId': item_id,
+            'permissionId': permission_id,
+            'body': {'role': role}
+        }
+        result = self.api.update(**kwargs).execute()
+        return {'id': result['id']}
+
+    def delete(self, item_id, permission_id):
+        """
+        Delete a permission for a Google Drive item (file, folder or drive).
+
+        Parameters
+        ----------
+        item_id : str
+            Google Drive item id.
+        permission_id : str
+            Permission id.
+
+        Returns
+        -------
+        None
+        """
+        kwargs = {'fileId': item_id, 'permissionId': permission_id}
+        self.api.delete(**kwargs).execute()
+        return None
+
+    @staticmethod
+    def _validate_type(type):
+        assert type in ('user', 'group', 'domain', 'anyone'), \
+            f'Invalid type: "{type}"'
+
+    @staticmethod
+    def _validate_role(role):
+        assert role in ('writer', 'commenter', 'reader'), \
+            f'Invalid role: "{role}"'

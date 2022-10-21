@@ -4,7 +4,13 @@ import pandas as pd
 import pytest
 
 from iolib import list_drive
-from iolib.drive import API_NAME, API_VERSION, build, format_search_query
+from iolib.drive import (
+    API_NAME,
+    API_VERSION,
+    build,
+    format_search_query,
+    DrivePermissions,
+)
 
 
 @mock.patch('iolib.drive.build_google_api')
@@ -111,3 +117,158 @@ def test_list_drive_with_service_account_json(m_build, m_format_search_query):
     list_drive(service_account_json=service_account_json)
     m_build.assert_called_once_with(readonly=True,
                                     service_account_json=service_account_json)
+
+
+@mock.patch('iolib.drive.build')
+def test_drive_permissions_init(m_build):
+    permissions = DrivePermissions()
+    assert m_build.return_value.permissions.return_value == permissions.api
+    m_build.assert_called_once_with(service_account_json=None)
+
+
+@mock.patch('iolib.drive.build')
+def test_drive_permissions_init_with_service_account_json(m_build):
+    permissions = DrivePermissions(service_account_json='<service_account_json>')
+    assert m_build.return_value.permissions.return_value == permissions.api
+    m_build.assert_called_once_with(service_account_json='<service_account_json>')
+
+
+@mock.patch.object(DrivePermissions, '__init__', return_value=None)
+def test_drive_permissions_list(_):
+    m_api = mock.MagicMock()
+    response = {
+        'permissions': [
+            {
+                'id': '<id>',
+                'type': '<type>',
+                'email': '<email>',
+                'role': '<role>',
+            }
+        ]
+    }
+    DrivePermissions.api = m_api
+    m_api.list.return_value.execute.return_value = response
+
+    permissions = DrivePermissions()
+    actual = permissions.list('<item_id>')
+    expected = pd.DataFrame([{'id': '<id>',
+                              'type': '<type>',
+                              'email': '<email>',
+                              'role': '<role>'}])
+    pd.testing.assert_frame_equal(expected, actual)
+    m_api.list.assert_called_once_with(
+        fileId='<item_id>',
+        fields='permissions/id,permissions/type,permissions/role,permissions/emailAddress')
+    m_api.list.return_value.execute.assert_called_once_with()
+
+
+def test_drive_permissions_validate_type():
+    DrivePermissions._validate_type('user')
+    assert True
+
+
+def test_drive_permissions_validate_type_errors():
+    with pytest.raises(AssertionError) as error:
+        DrivePermissions._validate_type('other')
+    assert 'Invalid type: "other"' == str(error.value)
+
+
+def test_drive_permissions_validate_role():
+    DrivePermissions._validate_role('reader')
+    assert True
+
+
+def test_drive_permissions_validate_role_errors():
+    with pytest.raises(AssertionError) as error:
+        DrivePermissions._validate_role('other')
+    assert 'Invalid role: "other"' == str(error.value)
+
+
+@mock.patch.object(DrivePermissions, '_validate_type')
+@mock.patch.object(DrivePermissions, '_validate_role')
+@mock.patch.object(DrivePermissions, '__init__', return_value=None)
+def test_drive_permissions_create(_, m_validate_role, m_validate_type):
+    m_api = mock.MagicMock()
+    DrivePermissions.api = m_api
+    m_api.create.return_value.execute.return_value = {
+        'id': '<id>',
+        'something-else': 'bah'
+    }
+
+    permissions = DrivePermissions()
+    actual = permissions.create('<item_id>', '<email>', '<role>')
+    expected = {'id': '<id>'}
+    assert expected == actual
+
+    m_api.create.assert_called_once_with(
+        fileId='<item_id>',
+        body={'emailAddress': '<email>', 'type': 'user', 'role': '<role>'},
+        sendNotificationEmail=False
+    )
+    m_api.create.return_value.execute.assert_called_once_with()
+    m_validate_role.assert_called_once_with('<role>')
+    m_validate_type.assert_called_once_with('user')
+
+
+@mock.patch.object(DrivePermissions, '_validate_type')
+@mock.patch.object(DrivePermissions, '_validate_role')
+@mock.patch.object(DrivePermissions, '__init__', return_value=None)
+def test_drive_permissions_create_non_user_or_group(_, m_validate_role, m_validate_type):
+    m_api = mock.MagicMock()
+    DrivePermissions.api = m_api
+    m_api.create.return_value.execute.return_value = {
+        'id': '<id>',
+        'something-else': 'bah'
+    }
+
+    permissions = DrivePermissions()
+    actual = permissions.create('<item_id>', '<email>', '<role>', type='domain')
+    expected = {'id': '<id>'}
+    assert expected == actual
+
+    m_api.create.assert_called_once_with(
+        fileId='<item_id>',
+        body={'emailAddress': '<email>', 'type': 'domain', 'role': '<role>'}
+    )
+    m_api.create.return_value.execute.assert_called_once_with()
+    m_validate_role.assert_called_once_with('<role>')
+    m_validate_type.assert_called_once_with('domain')
+
+
+@mock.patch.object(DrivePermissions, '_validate_role')
+@mock.patch.object(DrivePermissions, '__init__', return_value=None)
+def test_drive_permissions_update(_, m_validate_role):
+    m_api = mock.MagicMock()
+    DrivePermissions.api = m_api
+    m_api.update.return_value.execute.return_value = {
+        'id': '<id>',
+        'something-else': 'bah'
+    }
+
+    permissions = DrivePermissions()
+    actual = permissions.update('<item_id>', '<permission_id>', '<role>')
+    expected = {'id': '<id>'}
+    assert expected == actual
+
+    m_api.update.assert_called_once_with(
+        fileId='<item_id>',
+        permissionId='<permission_id>',
+        body={'role': '<role>'}
+    )
+    m_api.update.return_value.execute.assert_called_once_with()
+    m_validate_role.assert_called_once_with('<role>')
+
+
+@mock.patch.object(DrivePermissions, '__init__', return_value=None)
+def test_drive_permissions_delete(_):
+    m_api = mock.MagicMock()
+    DrivePermissions.api = m_api
+
+    permissions = DrivePermissions()
+    actual = permissions.delete('<item_id>', '<permission_id>')
+    expected = {'id': '<id>'}
+    assert actual is None
+
+    m_api.delete.assert_called_once_with(fileId='<item_id>',
+                                         permissionId='<permission_id>')
+    m_api.delete.return_value.execute.assert_called_once_with()
