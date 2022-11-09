@@ -13,6 +13,7 @@ setup(
     install_requires=[
         'google-api-python-client>=2.0.0,<3.0.0',
         'google-cloud-bigquery>=2.0.0,<4.0.0',
+        'google-cloud-storage>=2.0.0,<4.0.0',
         'pandas==1.4.*',
         'pyarrow==8.*',
         'db-dtypes',
