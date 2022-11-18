@@ -205,3 +205,26 @@ class DrivePermissions:
     def _validate_role(role):
         assert role in ('writer', 'commenter', 'reader'), \
             f'Invalid role: "{role}"'
+
+
+def list_drive_permissions(item_id=None, service_account_json=None):
+    """
+    List permissions for a given Google Drive item (file, folder or drive).
+
+    Parameters
+    ----------
+    item_id : str
+        Google Drive item id.
+    service_account_json : str, optional
+        Path to service account json file. Default as the one set in the
+        environment as `GOOGLE_APPLICATION_CREDENTIALS`
+
+    Returns
+    -------
+    df : pandas.DataFrame(id, type, email, role)
+
+    See also
+    --------
+    iolib.drive.DrivePermissions
+    """
+    return DrivePermissions(service_account_json).list(item_id)

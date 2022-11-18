@@ -3,7 +3,7 @@ from unittest import mock
 import pandas as pd
 import pytest
 
-from iolib import list_drive
+from iolib import list_drive, list_drive_permissions
 from iolib.drive import (
     API_NAME,
     API_VERSION,
@@ -272,3 +272,21 @@ def test_drive_permissions_delete(_):
     m_api.delete.assert_called_once_with(fileId='<item_id>',
                                          permissionId='<permission_id>')
     m_api.delete.return_value.execute.assert_called_once_with()
+
+
+@mock.patch('iolib.drive.DrivePermissions')
+def test_list_drive_permissions(m_drive_permissions):
+    actual = list_drive_permissions('<item_id>')
+    assert m_drive_permissions.return_value.list.return_value == actual
+    m_drive_permissions.return_value.list.assert_called_once_with('<item_id>')
+    m_drive_permissions.assert_called_once_with(None)
+
+
+@mock.patch('iolib.drive.DrivePermissions')
+def test_list_drive_permissions_with_service_account_json(m_drive_permissions):
+    actual = list_drive_permissions(
+        item_id='<item_id>',
+        service_account_json='<service_account_json>')
+    assert m_drive_permissions.return_value.list.return_value == actual
+    m_drive_permissions.return_value.list.assert_called_once_with('<item_id>')
+    m_drive_permissions.assert_called_once_with('<service_account_json>')
