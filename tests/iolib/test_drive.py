@@ -3,7 +3,7 @@ from unittest import mock
 import pandas as pd
 import pytest
 
-from iolib import list_drive, list_drive_permissions
+from iolib import list_drive, list_drive_permissions, set_drive_permissions
 from iolib.drive import (
     API_NAME,
     API_VERSION,
@@ -290,3 +290,116 @@ def test_list_drive_permissions_with_service_account_json(m_drive_permissions):
     assert m_drive_permissions.return_value.list.return_value == actual
     m_drive_permissions.return_value.list.assert_called_once_with('<item_id>')
     m_drive_permissions.assert_called_once_with('<service_account_json>')
+
+
+def test_set_drive_permissions_errors_if_invalid_mode():
+    with pytest.raises(AssertionError) as error:
+        set_drive_permissions(mock.ANY, mock.ANY, mode='other')
+    assert 'Invalid mode: "other"' == str(error.value)
+
+
+@mock.patch('iolib.drive.DrivePermissions')
+def test_set_drive_permissions(m_drive_permissions):
+    m_manager = m_drive_permissions.return_value
+    m_manager.list.return_value = pd.DataFrame([
+        {'id': 'id-1', 'email': 'email-1', 'role': 'role-1', 'type': 'type-1'},
+        {'id': 'id-2', 'email': 'email-2', 'role': 'role-2', 'type': 'type-2'},
+    ])
+
+    permissions = [
+        # To update.
+        {'email': 'email-1', 'role': 'role-1-updated'},
+        # To ignore.
+        {'email': 'email-2', 'role': 'role-2'},
+        # To create.
+        {'email': 'email-3', 'role': 'role-3', 'type': 'type-3'},
+    ]
+    set_drive_permissions('<item_id>', permissions)
+
+    m_drive_permissions.assert_called_once_with(None)
+    m_manager.list.assert_called_once_with('<item_id>')
+    m_manager.create.assert_called_once_with(
+        '<item_id>',
+        **{'email': 'email-3', 'role': 'role-3', 'type': 'type-3'})
+    m_manager.update.assert_called_once_with(
+        '<item_id>',
+        'id-1',
+        'role-1-updated')
+    m_manager.delete.assert_not_called()
+
+
+@mock.patch('iolib.drive.DrivePermissions')
+def test_set_drive_permissions_with_permissions_as_dataframe(m_drive_permissions):
+    m_manager = m_drive_permissions.return_value
+    m_manager.list.return_value = pd.DataFrame([
+        {'id': 'id-1', 'email': 'email-1', 'role': 'role-1', 'type': 'type-1'},
+        {'id': 'id-2', 'email': 'email-2', 'role': 'role-2', 'type': 'type-2'},
+    ])
+
+    permissions = pd.DataFrame([
+        # To update.
+        {'email': 'email-1', 'role': 'role-1-updated'},
+        # To ignore.
+        {'email': 'email-2', 'role': 'role-2'},
+        # To create.
+        {'email': 'email-3', 'role': 'role-3', 'type': 'type-3'},
+    ])
+    set_drive_permissions('<item_id>', permissions)
+
+    m_drive_permissions.assert_called_once_with(None)
+    m_manager.list.assert_called_once_with('<item_id>')
+    m_manager.create.assert_called_once_with(
+        '<item_id>',
+        **{'email': 'email-3', 'role': 'role-3', 'type': 'type-3'})
+    m_manager.update.assert_called_once_with(
+        '<item_id>',
+        'id-1',
+        'role-1-updated')
+    m_manager.delete.assert_not_called()
+
+
+@mock.patch('iolib.drive.DrivePermissions')
+def test_set_drive_permissions_with_replace_mode(m_drive_permissions):
+    m_manager = m_drive_permissions.return_value
+    m_manager.list.return_value = pd.DataFrame([
+        {'id': 'id-1', 'email': 'email-1', 'role': 'role-1', 'type': 'type-1'},
+        {'id': 'id-2', 'email': 'email-2', 'role': 'role-2', 'type': 'type-2'},
+        {'id': 'id-4', 'email': 'email-4', 'role': 'role-4', 'type': 'type-4'},
+    ])
+
+    permissions = [
+        # To update.
+        {'email': 'email-1', 'role': 'role-1-updated'},
+        # To ignore.
+        {'email': 'email-2', 'role': 'role-2'},
+        # To create.
+        {'email': 'email-3', 'role': 'role-3', 'type': 'type-3'},
+    ]
+    set_drive_permissions('<item_id>', permissions, mode='replace')
+
+    m_drive_permissions.assert_called_once_with(None)
+    m_manager.list.assert_called_once_with('<item_id>')
+    m_manager.create.assert_called_once_with(
+        '<item_id>',
+        **{'email': 'email-3', 'role': 'role-3', 'type': 'type-3'})
+    m_manager.update.assert_called_once_with(
+        '<item_id>',
+        'id-1',
+        'role-1-updated')
+    m_manager.delete.assert_called_once_with('<item_id>', 'id-4')
+
+
+@mock.patch('iolib.drive.DrivePermissions')
+def test_set_drive_permissions_called_with_service_account_json(m_drive_permissions):
+    set_drive_permissions('<item_id>',
+                          [],
+                          service_account_json='<service_account_json>')
+    m_drive_permissions.assert_called_once_with('<service_account_json>')
+
+
+@mock.patch('iolib.drive.DrivePermissions')
+def test_set_drive_permissions_errors_if_invalid_permission_keys(m_drive_permissions):
+    permissions = [{'id': 'id-1', 'email': 'email-2', 'role': 'role-2'}]
+    with pytest.raises(AssertionError) as error:
+        set_drive_permissions('<item_id>', permissions)
+    assert str(error.value).startswith('Permission with invalid keys: ')

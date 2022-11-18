@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 
 from .utils import build_google_api, normalize_key
@@ -228,3 +229,60 @@ def list_drive_permissions(item_id=None, service_account_json=None):
     iolib.drive.DrivePermissions
     """
     return DrivePermissions(service_account_json).list(item_id)
+
+
+def set_drive_permissions(item_id,
+                          permissions,
+                          mode='update',
+                          service_account_json=None):
+    """
+    Set permissions to a given Google Drive item (file, folder or drive). The
+    permissions provided can either update or replace the existing ones (update
+    doesn't delete permissions). Owner permissions won't be deleted, even if
+    the owner is not part of the permissions passed and the mode is "replace".
+
+    Parameters
+    ----------
+    item_id : str
+        Google Drive item id.
+    permissions : list of dicts or pandas.DataFrame
+        Permissions to set, with required fields "email" and "role", and
+        optional field "type".
+    mode : str, default="update"
+        Either "update" to create/update permissions, or "replace", to
+        create/update/delete permissions.
+    service_account_json : str, optional
+        Path to service account json file. Default as the one set in the
+        environment as `GOOGLE_APPLICATION_CREDENTIALS`
+
+    Returns
+    -------
+    None
+    """
+    assert mode in ('update', 'replace'), f'Invalid mode: "{mode}"'
+    if isinstance(permissions, pd.DataFrame):
+        permissions = permissions.replace({np.nan: None}).to_dict('records')
+
+    manager = DrivePermissions(service_account_json)
+    current_permissions_map = (
+        manager.list(item_id)
+        .set_index('email')
+        .to_dict('index')
+    )
+    for permission in permissions:
+        permission = {k: v for k, v in permission.items() if v is not None}
+        keys = set(permission.keys())
+        assert keys in ({'email', 'role'}, {'email', 'role', 'type'}), \
+            f'Permission with invalid keys: {keys}'
+        current_permission = current_permissions_map.pop(permission['email'],
+                                                         None)
+        if not current_permission:
+            manager.create(item_id, **permission)
+        elif current_permission['role'] != permission['role']:
+            manager.update(item_id,
+                           current_permission['id'],
+                           permission['role'])
+    if mode == 'replace':
+        for current_permission in current_permissions_map.values():
+            if current_permission['role'] != 'owner':
+                manager.delete(item_id, current_permission['id'])
