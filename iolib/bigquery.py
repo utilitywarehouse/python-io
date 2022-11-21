@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 
-def parse_schema(schema):
+def parse_schema(schema):  # wiki: ignore
     """
     Create a list of google.cloud.bigquery.SchemaField from a list of dicts.
     """
