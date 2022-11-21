@@ -44,7 +44,6 @@ def test_build_readonly(m_build_google_api):
     (1.2, 1.2),
     ('foo', 'foo'),
     (None, None),
-    (np.nan, None),
     ({1, 2}, [1, 2]),
     (np.array([1, 2]), [1, 2]),
     (datetime.date(2022, 10, 13), '2022-10-13'),
@@ -135,6 +134,24 @@ def test_write_sheets(m_list_drive, m_build_drive, m_build, m_format_cell_value)
     assert 4 == m_format_cell_value.call_count
     m_format_cell_value.assert_has_calls([mock.call(i) for i in (1, 2, 3, 4)],
                                          any_order=True)
+
+
+@mock.patch('iolib.sheets.format_cell_value', side_effect=lambda x: x)
+@mock.patch('iolib.sheets.build')
+@mock.patch('iolib.sheets.build_drive')
+@mock.patch('iolib.sheets.list_drive')
+def test_write_sheets_replaces_none_by_nan(m_list_drive, m_build_drive, m_build, m_format_cell_value):
+    data = pd.DataFrame([{'x': 'A', 'y': np.nan}])
+    name = '<name>'
+
+    m_list_drive.return_value = pd.DataFrame()
+    m_update = m_build.return_value.spreadsheets.return_value.values.return_value.update
+
+    write_sheets(data, name)
+
+    values = [['x', 'y'], ['A', None]]
+    m_update.assert_called_once()
+    assert m_update.call_args.kwargs['body'] == {'values': values}
 
 
 @mock.patch('iolib.sheets.format_cell_value', side_effect=lambda x: x)
