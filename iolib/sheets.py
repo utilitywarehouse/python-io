@@ -102,8 +102,13 @@ def write_sheets(data,
     range_name = f'Sheet1!A1:{string.ascii_uppercase[n_cols-1]}{n_rows}'
 
     # Populate spreadsheet.
-    values = [list(data.columns)] + \
-        list(data.applymap(format_cell_value).apply(list, axis=1))
+    values = (
+        data
+        .applymap(format_cell_value)
+        .replace({np.nan: None})
+        .apply(list, axis=1)
+    )
+    values = [list(data.columns)] + list(values)
     kwargs = {
         'spreadsheetId': spreadsheet_id,
         'range': range_name,
@@ -123,8 +128,6 @@ def format_cell_value(value):  # wiki: ignore
     --------
     >>> format_cell_value(1.2)
     1.2
-    >>> format_cell_value(np.nan)
-    None
     >>> format_cell_value(np.array([1, 2]))
     [1, 2]
     >>> format_cell_value(datetime.date(2022, 10, 13))
@@ -145,7 +148,4 @@ def format_cell_value(value):  # wiki: ignore
         return value.strftime(fmt)
     if isinstance(value, datetime.date):
         return value.isoformat()
-    # Keep this one after checking for a numpy array.
-    if pd.isnull(value):
-        return None
     return value
