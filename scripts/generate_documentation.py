@@ -92,6 +92,9 @@ for dirpath, _, filenames in os.walk(iolib_root):
 
         # Render functions documentation.
         for obj_name, obj in inspect.getmembers(module, inspect.isfunction):
+            # Exclude imported functions.
+            if obj.__module__ != module_name:
+                continue
             if exclude_object(obj):
                 continue
             content += f'## {obj_name}\n\n'
