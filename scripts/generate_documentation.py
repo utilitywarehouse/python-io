@@ -39,6 +39,10 @@ def generate_item_doc(executable, class_name=None):
     return content
 
 
+def exclude_object(obj):
+    return '# wiki: ignore' in inspect.getsource(obj)
+
+
 def save_file(name, content):
     with open(os.path.join(docs_root, f'{name}.md'), 'w') as infile:
         infile.write(content)
@@ -73,6 +77,8 @@ for dirpath, _, filenames in os.walk(iolib_root):
             # Exclude imported classes.
             if cls.__module__ != module_name:
                 continue
+            if exclude_object(cls):
+                continue
             content = ''
             content += f'## {class_name}\n\n'
             if (docstring := inspect.getdoc(cls)):
@@ -86,6 +92,11 @@ for dirpath, _, filenames in os.walk(iolib_root):
 
         # Render functions documentation.
         for obj_name, obj in inspect.getmembers(module, inspect.isfunction):
+            # Exclude imported functions.
+            if obj.__module__ != module_name:
+                continue
+            if exclude_object(obj):
+                continue
             content += f'## {obj_name}\n\n'
             content += generate_item_doc(obj)
 

@@ -66,7 +66,7 @@ def read_storage(bucket_name,
     return result
 
 
-def read_blob(blob, encoding='utf-8', **kwargs):
+def read_blob(blob, encoding='utf-8', **kwargs):  # wiki: ignore
     _, ext = os.path.splitext(blob.name)
     if ext != '.csv':
         raise Exception('Only CSV currently supported')

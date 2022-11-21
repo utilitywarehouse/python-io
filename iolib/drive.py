@@ -59,7 +59,7 @@ def list_drive(name=None,
     return pd.DataFrame(result).rename(columns=normalize_key)
 
 
-def format_search_query(name=None, folder_id=None, mime_type=None):
+def format_search_query(name=None, folder_id=None, mime_type=None):  # wiki: ignore
     """
     Format query to use in Google Drive `files.list`.
 

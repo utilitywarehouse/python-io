@@ -114,7 +114,7 @@ def write_sheets(data,
     return {'id': result['spreadsheetId']}
 
 
-def format_cell_value(value):
+def format_cell_value(value):  # wiki: ignore
     """
     Format the value of the spreadsheet cell. This value will be serialized as
     JSON in the Google libraries.
