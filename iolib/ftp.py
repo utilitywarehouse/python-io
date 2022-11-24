@@ -168,3 +168,70 @@ def read_ftp(host,
     if ext != 'csv':
         raise Exception('Unsupported file format')
     return pd.read_csv(file, **kwargs)
+
+
+def write_ftp(host,
+              path,
+              data,
+              user=None,
+              password=None,
+              acct=None,
+              timeout=None,
+              source_address=None,
+              encoding='utf-8',
+              context=None,
+              tls=False,
+              **kwargs):
+    """
+    Write dataframe to an FTP server.
+
+    Parameters
+    ----------
+    host : str
+        Host to pass to FTP python client.
+    path : str
+        File path in FTP server.
+    data : pandas.DataFrame
+        Dataframe containing the data.
+    user : str, optional
+        User to pass to FTP python client,
+    password : str, optional
+        Password to pass to FTP python client as "passwd".
+    acct : str, optional
+        Accounting information to pass to FTP python client.
+    timeout : int, optional
+        Timeout in seconds to pass to FTP python client.
+    source_address : str, optional
+        Source IP address to pass to FTP python client.
+    encoding : str, default='utf-8'
+        Encoding to pass to FTP python client.
+    context : ssl.Context, optional
+        SSL Context to pass to FTP python client.
+    tls : bool, default=False
+        Whether to use TLS or not.
+
+    See more
+    --------
+    https://docs.python.org/3/library/ftplib.html
+
+    TODOs
+    -----
+      - Support for other file formats.
+    """
+    ext = path.rsplit('.', 1)[-1].lower()
+    if ext != 'csv':
+        raise Exception('Unsupported file format')
+    ftp = connect(host,
+                  user=user,
+                  password=password,
+                  acct=acct,
+                  timeout=timeout,
+                  source_address=source_address,
+                  encoding=encoding,
+                  context=context,
+                  tls=tls)
+    file = BytesIO()
+    file.write(data.to_csv(header=True, index=False).encode(encoding))
+    file.seek(0)
+    ftp.storbinary(f'STOR {path}', file)
+    ftp.quit()
