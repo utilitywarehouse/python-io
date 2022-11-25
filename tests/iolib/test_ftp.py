@@ -118,30 +118,19 @@ def test_read_ftp_csv(m_connect):
 
 @mock.patch('iolib.ftp.connect')
 def test_read_ftp_no_csv(m_connect):
-    m_retrbinary = m_connect.return_value.retrbinary
     with pytest.raises(Exception) as error:
-        actual = read_ftp(host='<host>',
-                          path='file.xxx',
-                          user='<user>',
-                          password='<password>',
-                          acct='<acct>',
-                          timeout='<timeout>',
-                          source_address='<source_address>',
-                          encoding='<encoding>',
-                          context='<context>',
-                          tls='<tls>')
+        read_ftp(host='<host>',
+                 path='file.xxx',
+                 user='<user>',
+                 password='<password>',
+                 acct='<acct>',
+                 timeout='<timeout>',
+                 source_address='<source_address>',
+                 encoding='<encoding>',
+                 context='<context>',
+                 tls='<tls>')
     assert 'Unsupported file format' == str(error.value)
-    m_connect.assert_called_once_with('<host>',
-                                      user='<user>',
-                                      password='<password>',
-                                      acct='<acct>',
-                                      timeout='<timeout>',
-                                      source_address='<source_address>',
-                                      encoding='<encoding>',
-                                      context='<context>',
-                                      tls='<tls>')
-    m_retrbinary.assert_called_once()
-    m_connect.return_value.quit.assert_called_once()
+    m_connect.assert_not_called()
 
 
 @mock.patch('iolib.ftp.BytesIO')

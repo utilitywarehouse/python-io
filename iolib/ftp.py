@@ -151,6 +151,9 @@ def read_ftp(host,
     -----
       - Support for other file formats.
     """
+    ext = path.rsplit('.', 1)[-1].lower()
+    if ext != 'csv':
+        raise Exception('Unsupported file format')
     ftp = connect(host,
                   user=user,
                   password=password,
@@ -164,9 +167,6 @@ def read_ftp(host,
     ftp.retrbinary(f'RETR {path}', callback=file.write)
     ftp.quit()
     file.seek(0)
-    ext = path.rsplit('.', 1)[-1].lower()
-    if ext != 'csv':
-        raise Exception('Unsupported file format')
     return pd.read_csv(file, **kwargs)
 
 
