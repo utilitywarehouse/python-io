@@ -553,7 +553,7 @@ def test_bigquery_table_manager_writes_from_dataframe(m_client, _):
     manager.table = mock.PropertyMock()
     manager.table.schema = [DummyColumn('a')]
     data = pd.DataFrame([{'a': 'x', 'b': 1}, {'a': np.nan, 'b': 2}])
-    m_client.insert_rows_from_dataframe.return_value = None
+    m_client.insert_rows_from_dataframe.return_value = [[]]
     manager.write(data, if_exists='append')
     m_client.insert_rows_from_dataframe.assert_called_once()
     args, kwargs = m_client.insert_rows_from_dataframe.call_args
@@ -567,10 +567,10 @@ def test_bigquery_table_manager_writes_from_dataframe(m_client, _):
 def test_bigquery_table_manager_errors_if_insert_rows_from_dataframe_errors_when_writing(m_client, _):
     manager = BigqueryTableManager()
     manager.table = mock.PropertyMock()
-    m_client.insert_rows_from_dataframe.return_value = 'An error from Bigquery'
+    m_client.insert_rows_from_dataframe.return_value = [['An error from Bigquery']]
     with pytest.raises(Exception) as error:
         manager.write(pd.DataFrame([{'x': 1}]), if_exists='append')
-    assert 'An error from Bigquery' == str(error.value)
+    assert "[['An error from Bigquery']]" == str(error.value)
 
 
 @mock.patch.object(BigqueryTableManager, '__init__', return_value=None)

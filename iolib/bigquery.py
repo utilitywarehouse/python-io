@@ -286,7 +286,7 @@ class BigqueryTableManager:
                 self.table,
                 data,
                 chunk_size=chunk_size)
-            if errors:
+            if any(errors):
                 raise Exception(errors)
 
         # Write indexable iterable.
