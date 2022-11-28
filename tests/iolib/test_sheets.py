@@ -68,11 +68,30 @@ def test_read_sheets(m_build):
                    [2, None, 'foo']]
     }
     actual = read_sheets(sheet_id='<sheet_id>',
-                         sheet_name='<sheet_name>',
                          index=['ind1', 'ind2'])
     expected = pd.DataFrame([[1, '2022-10-11', None], [2, None, 'foo']],
                             columns=['col1', 'col2', 'col3'],
                             index=['ind1', 'ind2'])
+    pd.testing.assert_frame_equal(expected, actual)
+    m_spreadsheets.assert_called_once_with()
+    m_values.assert_called_once_with()
+    m_get.assert_called_once_with(spreadsheetId='<sheet_id>',
+                                  range='Sheet1',
+                                  valueRenderOption='UNFORMATTED_VALUE',
+                                  dateTimeRenderOption='FORMATTED_STRING')
+    m_execute.assert_called_once_with()
+
+
+@mock.patch('iolib.sheets.build')
+def test_read_sheets_with_sheet_name(m_build):
+    m_spreadsheets = m_build.return_value.spreadsheets
+    m_values = m_spreadsheets.return_value.values
+    m_get = m_values.return_value.get
+    m_execute = m_get.return_value.execute
+    m_execute.return_value = {'values': [['col1', 'col2'], ['foo', 'bar']]}
+    actual = read_sheets(sheet_id='<sheet_id>',
+                         sheet_name='<sheet_name>')
+    expected = pd.DataFrame([['foo', 'bar']], columns=['col1', 'col2'])
     pd.testing.assert_frame_equal(expected, actual)
     m_spreadsheets.assert_called_once_with()
     m_values.assert_called_once_with()

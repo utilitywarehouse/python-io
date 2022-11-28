@@ -26,7 +26,7 @@ def build(readonly=False, service_account_json=None):
 
 
 def read_sheets(sheet_id,
-                sheet_name,
+                sheet_name='Sheet1',
                 header=True,
                 service_account_json=None,
                 **kwargs):
@@ -37,7 +37,7 @@ def read_sheets(sheet_id,
     ----------
     sheet_id : str
         Google Sheet id.
-    sheet_name : str
+    sheet_name : str, default="Sheet1"
         Sheet name of the sheet.
     header : bool, default=True
         Whether use the first row as header or not.
