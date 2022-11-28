@@ -25,6 +25,55 @@ def build(readonly=False, service_account_json=None):
                             service_account_json=service_account_json)
 
 
+def read_sheets(sheet_id,
+                sheet_name='Sheet1',
+                header=True,
+                service_account_json=None,
+                **kwargs):
+    """
+    Read dataframe from Google Sheets.
+
+    Parameters
+    ----------
+    sheet_id : str
+        Google Sheet id.
+    sheet_name : str, default="Sheet1"
+        Sheet name of the sheet.
+    header : bool, default=True
+        Whether use the first row as header or not.
+    service_account_json : str, optional
+        Path to service account json file. Default as the one set in the
+        environment as `GOOGLE_APPLICATION_CREDENTIALS`
+    kwargs : kwargs
+        To pass to pandas.DataFrame along with the data from the sheet.
+
+    Returns
+    -------
+    data : pandas.DataFrame
+    """
+    api = build(service_account_json=service_account_json)
+    result = (
+        api
+        .spreadsheets()
+        .values()
+        .get(spreadsheetId=sheet_id,
+             range=sheet_name,
+             valueRenderOption='UNFORMATTED_VALUE',
+             dateTimeRenderOption='FORMATTED_STRING')
+        .execute()
+    )
+    if header:
+        values = result['values'][1:]
+        columns = result['values'][0]
+    else:
+        values = result['values']
+        columns = None
+    return (
+        pd.DataFrame(values, columns=columns, **kwargs)
+        .replace({None: np.nan})
+    )
+
+
 def write_sheets(data,
                  name,
                  if_exists='fail',
