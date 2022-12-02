@@ -64,12 +64,12 @@ def test_read_sheets(m_build):
     m_execute = m_get.return_value.execute
     m_execute.return_value = {
         'values': [['col1', 'col2', 'col3'],
-                   [1, '2022-10-11', None],
-                   [2, None, 'foo']]
+                   [1, '2022-10-11', None],  # None to np.nan
+                   [2, '', 'foo']]  # '' to np.nan
     }
     actual = read_sheets(sheet_id='<sheet_id>',
                          index=['ind1', 'ind2'])
-    expected = pd.DataFrame([[1, '2022-10-11', None], [2, None, 'foo']],
+    expected = pd.DataFrame([[1, '2022-10-11', np.nan], [2, np.nan, 'foo']],
                             columns=['col1', 'col2', 'col3'],
                             index=['ind1', 'ind2'])
     pd.testing.assert_frame_equal(expected, actual)

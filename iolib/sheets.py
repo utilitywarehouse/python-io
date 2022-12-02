@@ -70,7 +70,7 @@ def read_sheets(sheet_id,
         columns = None
     return (
         pd.DataFrame(values, columns=columns, **kwargs)
-        .replace({None: np.nan})
+        .replace({None: np.nan, '': np.nan})
     )
 
 
