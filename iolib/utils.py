@@ -26,7 +26,7 @@ def build_google_api(name, version, scopes, service_account_json=None):
 
 def to_snakecase(value):
     # Add underscore between lower and uppercased letter.
-    value = re.sub(r'(?<=[a-w])([A-W])', r'_\1', value)
+    value = re.sub(r'(?<=[a-z])([A-Z])', r'_\1', value)
     # Replace dash or space by underscore.
     value = re.sub(r'[ -]', '_', value)
     value = value.lower()
