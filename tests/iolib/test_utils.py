@@ -47,6 +47,8 @@ def test_build_google_api_with_credentials_from_env(m_os, m_build, m_credentials
     ('Email Address', 'email_address'),
     ('phoneNumber', 'phone_number'),
     ('toHTML', 'to_html'),
+    ('365days', '365_days'),
+    ('52Weeks', '52_weeks'),
 ))
 def test_to_snakecase(value, expected):
     actual = to_snakecase(value)
